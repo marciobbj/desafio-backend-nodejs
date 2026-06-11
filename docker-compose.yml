@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: atendimento
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Opcional — só para quem optar por SQS em vez de BullMQ/Redis.
+  localstack:
+    image: localstack/localstack:3
+    environment:
+      SERVICES: sqs
+    ports:
+      - "4566:4566"
+
+  # Simula a Meta WhatsApp Cloud API: dispara webhooks assinados e recebe seus envios.
+  mock-meta:
+    build: ./mock-meta-server
+    ports:
+      - "8001:8001"
+    environment:
+      # Mesmos valores do seu .env — usados para ASSINAR o webhook (HMAC-SHA256).
+      META_APP_SECRET: super-secret-app-secret-trocar
+      # Para onde o mock entrega os webhooks (seu backend rodando no host, porta 8000).
+      CANDIDATE_WEBHOOK_URL: http://host.docker.internal:8000/webhook
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  pgdata:

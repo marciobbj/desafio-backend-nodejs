@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+*.log
+npm-debug.log*
+.DS_Store
+coverage/
+.turbo/
+.idea/
+.vscode/
+
+# Material exclusivo do entrevistador — NUNCA versionar no repo público.
+_interviewer/
