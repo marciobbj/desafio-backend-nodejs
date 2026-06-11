@@ -71,6 +71,7 @@ export const conversations = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
+    uniqTenantContact: unique("conversations_tenant_contact_unique").on(table.tenantId, table.contactId),
     tenantContactIdx: index("conversations_tenant_contact_idx").on(table.tenantId, table.contactId),
     tenantLastMessageIdx: index("conversations_tenant_last_message_idx").on(
       table.tenantId,
