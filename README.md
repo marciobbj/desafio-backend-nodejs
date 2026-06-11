@@ -256,6 +256,7 @@ Cobertura atual:
 ### Premissas e proximos passos
 
 - O tenant padrao e criado automaticamente no boot com `DEFAULT_TENANT_ID`.
+- Se voce ja copiou o `.env`, use `DEFAULT_TENANT_ID=00000000-0000-4000-8000-000000000001`.
 - Nao ha fluxo completo de login; tokens JWT de desenvolvimento sao gerados via script.
 - O lock por conversa e em memoria, suficiente para um worker local. Em producao com multiplas replicas, eu moveria isso para Redis ou advisory lock no Postgres.
 - Embeddings persistidos e DLQ dedicada ficaram fora do escopo para manter a entrega objetiva.
