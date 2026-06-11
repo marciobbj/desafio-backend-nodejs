@@ -156,7 +156,7 @@ A porta esperada do **seu** backend é a **8000**.
 
 ## 📋 Regras
 
-- **Prazo**: 4 dias corridos a partir do recebimento.
+- **Prazo**: 5 dias corridos a partir do recebimento.
 - **Linguagem**: Node.js + TypeScript.
 - Bibliotecas à sua escolha — documente o porquê das principais.
 - Pode usar IA como assistente. Mas **você precisa entender e defender cada decisão** —
