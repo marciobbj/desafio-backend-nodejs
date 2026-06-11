@@ -1,25 +1,184 @@
-/**
- * Schema do banco (sugestão com Drizzle ORM).
- *
- * Modele aqui suas tabelas. Uma estrutura mínima possível:
- *   - tenants    (id, nome, ...)
- *   - contacts   (id, tenant_id, wa_id/telefone, nome, ...)
- *   - conversations (id, tenant_id, contact_id, status, ...)
- *   - messages   (id, tenant_id, conversation_id, wa_message_id ÚNICO, direction, body, ...)
- *
- * Dica: a coluna do `message.id` da Meta (wa_message_id) com índice ÚNICO é uma forma simples
- * de garantir idempotência na reentrega de webhooks.
- *
- * Exemplo (descomente e ajuste ao adicionar `drizzle-orm` às dependências):
- *
- * import { pgTable, uuid, text, timestamp, unique } from "drizzle-orm/pg-core";
- *
- * export const messages = pgTable("messages", {
- *   id: uuid("id").defaultRandom().primaryKey(),
- *   tenantId: uuid("tenant_id").notNull(),
- *   waMessageId: text("wa_message_id").notNull(),
- *   // ...
- * }, (t) => ({ uniqWaId: unique().on(t.tenantId, t.waMessageId) }));
- */
+import { relations, sql } from "drizzle-orm";
+import {
+  index,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
-export {};
+export const tenants = pgTable("tenants", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const tenantChannels = pgTable(
+  "tenant_channels",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull().default("whatsapp"),
+    phoneNumberId: text("phone_number_id").notNull(),
+    wabaId: text("waba_id"),
+    verifyToken: text("verify_token").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqProviderPhoneNumber: unique("tenant_channels_provider_phone_unique").on(
+      table.provider,
+      table.phoneNumberId,
+    ),
+  }),
+);
+
+export const contacts = pgTable(
+  "contacts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    waId: text("wa_id").notNull(),
+    name: text("name"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqTenantWaId: unique("contacts_tenant_wa_unique").on(table.tenantId, table.waId),
+    tenantIdx: index("contacts_tenant_idx").on(table.tenantId),
+  }),
+);
+
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    status: text("status").notNull().default("open"),
+    lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    tenantContactIdx: index("conversations_tenant_contact_idx").on(table.tenantId, table.contactId),
+    tenantLastMessageIdx: index("conversations_tenant_last_message_idx").on(
+      table.tenantId,
+      table.lastMessageAt,
+    ),
+  }),
+);
+
+export const messages = pgTable(
+  "messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references(() => contacts.id, { onDelete: "cascade" }),
+    waMessageId: text("wa_message_id"),
+    direction: text("direction", { enum: ["inbound", "outbound"] }).notNull(),
+    body: text("body").notNull(),
+    status: text("status").notNull().default("received"),
+    providerPayload: jsonb("provider_payload").$type<unknown>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqInboundWaMessage: uniqueIndex("messages_tenant_wa_message_unique")
+      .on(table.tenantId, table.waMessageId)
+      .where(sql`${table.waMessageId} is not null`),
+    conversationCreatedIdx: index("messages_conversation_created_idx").on(
+      table.tenantId,
+      table.conversationId,
+      table.createdAt,
+    ),
+  }),
+);
+
+export const webhookEvents = pgTable(
+  "webhook_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "set null" }),
+    provider: text("provider").notNull().default("whatsapp"),
+    eventType: text("event_type").notNull(),
+    signature: text("signature"),
+    rawBody: text("raw_body").notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    tenantIdx: index("webhook_events_tenant_idx").on(table.tenantId),
+  }),
+);
+
+export const tenantsRelations = relations(tenants, ({ many }) => ({
+  channels: many(tenantChannels),
+  contacts: many(contacts),
+  conversations: many(conversations),
+  messages: many(messages),
+}));
+
+export const tenantChannelsRelations = relations(tenantChannels, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tenantChannels.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+export const contactsRelations = relations(contacts, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [contacts.tenantId],
+    references: [tenants.id],
+  }),
+  conversations: many(conversations),
+  messages: many(messages),
+}));
+
+export const conversationsRelations = relations(conversations, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [conversations.tenantId],
+    references: [tenants.id],
+  }),
+  contact: one(contacts, {
+    fields: [conversations.contactId],
+    references: [contacts.id],
+  }),
+  messages: many(messages),
+}));
+
+export const messagesRelations = relations(messages, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [messages.tenantId],
+    references: [tenants.id],
+  }),
+  conversation: one(conversations, {
+    fields: [messages.conversationId],
+    references: [conversations.id],
+  }),
+  contact: one(contacts, {
+    fields: [messages.contactId],
+    references: [contacts.id],
+  }),
+}));
+
+export type Tenant = typeof tenants.$inferSelect;
+export type Contact = typeof contacts.$inferSelect;
+export type Conversation = typeof conversations.$inferSelect;
+export type Message = typeof messages.$inferSelect;
