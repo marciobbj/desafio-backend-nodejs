@@ -18,7 +18,19 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "dotenv": "^16.4.7"
+    "@fastify/jwt": "^10.1.0",
+    "@langchain/core": "^1.1.48",
+    "@langchain/openai": "^1.4.7",
+    "bullmq": "^5.78.0",
+    "dotenv": "^16.4.7",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.8.5",
+    "fastify-raw-body": "^5.0.0",
+    "ioredis": "^5.11.1",
+    "langchain": "^1.4.4",
+    "pino": "^10.3.1",
+    "postgres": "^3.4.9",
+    "zod": "^4.4.3"
   },
   "//dependencias-sugeridas": "Adicione conforme sua solução: express|fastify|hono, drizzle-orm, postgres, bullmq, ioredis, openai, pino, zod, @aws-sdk/client-sqs ...",
   "devDependencies": {
