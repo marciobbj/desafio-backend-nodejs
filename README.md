@@ -163,3 +163,99 @@ A porta esperada do **seu** backend é a **8000**.
   na entrevista vamos conversar sobre o seu código.
 
 Boa sorte! 🚀
+
+---
+
+## Solucao implementada
+
+Esta implementacao segue o plano descrito em [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+
+### Stack escolhida
+
+- Fastify para HTTP.
+- PostgreSQL + Drizzle ORM para persistencia.
+- BullMQ + Redis com fila unica `inbound-messages`.
+- Particionamento logico por `tenantId` no payload dos jobs, queries e logs.
+- JWT para autenticar a API REST.
+- LangChain + OpenAI para gerar respostas, com fallback local quando `OPENAI_API_KEY` nao estiver configurada.
+- Pino para logs estruturados.
+- Vitest para testes.
+
+### Como rodar
+
+```bash
+npm install
+cp .env.example .env
+docker compose up -d
+npm run db:migrate
+```
+
+Em terminais separados:
+
+```bash
+npm run dev
+npm run worker
+```
+
+Simule uma mensagem:
+
+```bash
+curl -X POST http://localhost:8001/simulate/inbound \
+  -H "Content-Type: application/json" \
+  -d '{ "from": "5511999990000", "text": "Quais sao os planos de voces?" }'
+```
+
+Veja as mensagens enviadas ao mock:
+
+```bash
+curl http://localhost:8001/sent
+```
+
+### API REST
+
+Gere um token de desenvolvimento:
+
+```bash
+npm run token:dev
+```
+
+Use o token nos endpoints:
+
+```bash
+curl http://localhost:8000/conversations \
+  -H "Authorization: Bearer <TOKEN>"
+
+curl http://localhost:8000/conversations/<CONVERSATION_ID>/messages \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+### Decisoes importantes
+
+- O webhook valida `X-Hub-Signature-256` usando o corpo cru da requisicao.
+- O handler do webhook nao chama OpenAI; ele persiste, enfileira e responde rapido.
+- A idempotencia principal fica no banco com indice unico parcial em `(tenant_id, wa_message_id)`.
+- A API REST nunca aceita `tenantId` do cliente; o tenant vem do JWT.
+- O worker aplica lock em memoria por conversa para reduzir risco de respostas concorrentes no mesmo atendimento.
+- A base de conhecimento e recuperada por busca lexical simples. Para esta base pequena, isso e mais previsivel que introduzir vector store externo.
+- O tool calling implementado consulta status de protocolo `PED-XXXX`.
+
+### Testes
+
+```bash
+npm test
+npm run typecheck
+```
+
+Cobertura atual:
+
+- assinatura valida e invalida do webhook
+- parsing de payload inbound da Meta
+- handshake `GET /webhook`
+- retrieval da knowledge base
+
+### Premissas e proximos passos
+
+- O tenant padrao e criado automaticamente no boot com `DEFAULT_TENANT_ID`.
+- Nao ha fluxo completo de login; tokens JWT de desenvolvimento sao gerados via script.
+- O lock por conversa e em memoria, suficiente para um worker local. Em producao com multiplas replicas, eu moveria isso para Redis ou advisory lock no Postgres.
+- Embeddings persistidos e DLQ dedicada ficaram fora do escopo para manter a entrega objetiva.
