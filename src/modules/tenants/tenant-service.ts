@@ -17,7 +17,13 @@ export async function ensureDefaultTenant(db: DbClient) {
 
   const [tenant] = await db
     .insert(tenants)
-    .values({ name: "NeoFibra" })
+    .values({ id: config.DEFAULT_TENANT_ID, name: "NeoFibra" })
+    .onConflictDoUpdate({
+      target: tenants.id,
+      set: {
+        name: "NeoFibra",
+      },
+    })
     .returning();
 
   if (!tenant) {

@@ -13,6 +13,7 @@ const envSchema = z.object({
   META_API_BASE_URL: z.string().url().default("http://localhost:8001"),
   META_PHONE_NUMBER_ID: z.string().default("123456789012345"),
   JWT_SECRET: z.string().min(16).default("dev-secret-change-me-in-production"),
+  DEFAULT_TENANT_ID: z.string().uuid().default("00000000-0000-0000-0000-000000000001"),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-4o-mini"),
 });

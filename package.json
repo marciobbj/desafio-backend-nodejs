@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "token:dev": "tsx src/scripts/create-dev-token.ts",
     "test": "vitest run"
   },
   "dependencies": {
