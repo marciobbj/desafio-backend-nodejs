@@ -41,10 +41,61 @@ services:
     environment:
       # Mesmos valores do seu .env — usados para ASSINAR o webhook (HMAC-SHA256).
       META_APP_SECRET: super-secret-app-secret-trocar
-      # Para onde o mock entrega os webhooks (seu backend rodando no host, porta 8000).
-      CANDIDATE_WEBHOOK_URL: http://host.docker.internal:8000/webhook
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      # Para onde o mock entrega os webhooks.
+      CANDIDATE_WEBHOOK_URL: ${CANDIDATE_WEBHOOK_URL:-http://backend:8000/webhook}
+    depends_on:
+      - backend
+
+  backend:
+    image: node:24-alpine
+    working_dir: /app
+    command: sh -c "npm run db:migrate && npm run dev"
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-proj-troque-pela-sua-chave}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-meu-verify-token-secreto}
+      META_APP_SECRET: ${META_APP_SECRET:-super-secret-app-secret-trocar}
+      META_TOKEN: ${META_TOKEN:-mock-token}
+      META_API_BASE_URL: http://mock-meta:8001
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-123456789012345}
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/atendimento
+      REDIS_URL: redis://redis:6379
+      QUEUE_NAME: ${QUEUE_NAME:-inbound-messages}
+      PORT: 8000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-in-production}
+      DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-00000000-0000-4000-8000-000000000001}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: node:24-alpine
+    working_dir: /app
+    command: npm run worker
+    volumes:
+      - .:/app
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-proj-troque-pela-sua-chave}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      META_TOKEN: ${META_TOKEN:-mock-token}
+      META_API_BASE_URL: http://mock-meta:8001
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-123456789012345}
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/atendimento
+      REDIS_URL: redis://redis:6379
+      QUEUE_NAME: ${QUEUE_NAME:-inbound-messages}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-in-production}
+      DEFAULT_TENANT_ID: ${DEFAULT_TENANT_ID:-00000000-0000-4000-8000-000000000001}
+    depends_on:
+      backend:
+        condition: service_started
 
 volumes:
   pgdata:

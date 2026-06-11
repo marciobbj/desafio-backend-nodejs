@@ -187,14 +187,6 @@ Esta implementacao segue o plano descrito em [`IMPLEMENTATION_PLAN.md`](IMPLEMEN
 npm install
 cp .env.example .env
 docker compose up -d
-npm run db:migrate
-```
-
-Em terminais separados:
-
-```bash
-npm run dev
-npm run worker
 ```
 
 Simule uma mensagem:
@@ -209,6 +201,17 @@ Veja as mensagens enviadas ao mock:
 
 ```bash
 curl http://localhost:8001/sent
+```
+
+Por padrao, o `docker-compose.yml` sobe Postgres, Redis, backend, worker e mock-meta. O mock entrega webhooks em `http://backend:8000/webhook`, dentro da rede Docker.
+
+Se preferir rodar o backend no host com `npm run dev`, sobrescreva a URL do mock antes de recriar o container:
+
+```bash
+CANDIDATE_WEBHOOK_URL=http://host.docker.internal:8000/webhook docker compose up -d --force-recreate mock-meta
+npm run db:migrate
+npm run dev
+npm run worker
 ```
 
 ### API REST

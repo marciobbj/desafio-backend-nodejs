@@ -42,6 +42,6 @@ export const inboundMessagesQueue = new Queue<
 
 export async function enqueueInboundMessage(job: ProcessInboundMessageJob) {
   return inboundMessagesQueue.add("process-inbound-message", job, {
-    jobId: `${job.tenantId}:${job.waMessageId}`,
+    jobId: `${job.tenantId}__${job.waMessageId}`,
   });
 }
