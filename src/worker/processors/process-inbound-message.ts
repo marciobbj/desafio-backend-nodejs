@@ -4,9 +4,11 @@ import { sendWhatsAppText } from "../../integrations/meta/meta-client.js";
 import { logger } from "../../lib/logger.js";
 import { generateReply } from "../../modules/ai/ai-service.js";
 import {
-  createOutboundMessage,
+  createOrGetOutboundReply,
+  findOutboundReplyForInbound,
   getConversationForJob,
   markMessageSent,
+  markMessageStatus,
 } from "../../modules/conversations/conversation-service.js";
 import type { ProcessInboundMessageJob } from "../../modules/queue/queue.js";
 
@@ -38,27 +40,68 @@ export async function processInboundMessage(job: Job<ProcessInboundMessageJob>) 
       inboundMessageId: job.data.inboundMessageId,
     });
 
-    const answer = await generateReply({
+    if (inboundMessage.status === "responded") {
+      logger.info(
+        {
+          jobId: job.id,
+          tenantId: job.data.tenantId,
+          conversationId: job.data.conversationId,
+          inboundMessageId: inboundMessage.id,
+        },
+        "Inbound message already responded; skipping job",
+      );
+      return;
+    }
+
+    await markMessageStatus(db, inboundMessage.id, "processing");
+
+    const existingOutbound = await findOutboundReplyForInbound(db, {
       tenantId: job.data.tenantId,
-      conversationId: job.data.conversationId,
-      history,
-      question: inboundMessage.body,
+      inboundMessageId: inboundMessage.id,
     });
 
-    const outbound = await createOutboundMessage(db, {
+    if (existingOutbound?.status === "sent") {
+      await markMessageStatus(db, inboundMessage.id, "responded");
+      logger.info(
+        {
+          jobId: job.id,
+          tenantId: job.data.tenantId,
+          conversationId: job.data.conversationId,
+          outboundMessageId: existingOutbound.id,
+        },
+        "Outbound reply already sent; skipping resend",
+      );
+      return;
+    }
+
+    const answer =
+      existingOutbound?.body ??
+      (await generateReply({
+        tenantId: job.data.tenantId,
+        conversationId: job.data.conversationId,
+        history,
+        question: inboundMessage.body,
+      }));
+
+    const outbound =
+      existingOutbound ??
+      (await createOrGetOutboundReply(db, {
       tenantId: job.data.tenantId,
       conversationId: conversation.id,
       contactId: conversation.contactId,
+      inboundMessageId: inboundMessage.id,
       body: answer,
       status: "pending",
-    });
+      }));
 
+    await markMessageStatus(db, outbound.id, "sending");
     const providerPayload = await sendWhatsAppText({
       to: conversation.contact.waId,
       text: answer,
     });
 
     await markMessageSent(db, outbound.id, providerPayload);
+    await markMessageStatus(db, inboundMessage.id, "responded");
 
     logger.info(
       {

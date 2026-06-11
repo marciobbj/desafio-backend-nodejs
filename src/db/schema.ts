@@ -94,6 +94,7 @@ export const messages = pgTable(
       .notNull()
       .references(() => contacts.id, { onDelete: "cascade" }),
     waMessageId: text("wa_message_id"),
+    idempotencyKey: text("idempotency_key"),
     direction: text("direction", { enum: ["inbound", "outbound"] }).notNull(),
     body: text("body").notNull(),
     status: text("status").notNull().default("received"),
@@ -104,6 +105,9 @@ export const messages = pgTable(
     uniqInboundWaMessage: uniqueIndex("messages_tenant_wa_message_unique")
       .on(table.tenantId, table.waMessageId)
       .where(sql`${table.waMessageId} is not null`),
+    uniqIdempotencyKey: uniqueIndex("messages_tenant_idempotency_key_unique")
+      .on(table.tenantId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
     conversationCreatedIdx: index("messages_conversation_created_idx").on(
       table.tenantId,
       table.conversationId,

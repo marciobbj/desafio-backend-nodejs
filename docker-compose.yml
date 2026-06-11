@@ -57,6 +57,8 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-proj-troque-pela-sua-chave}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_TOOL_CALLING_ENABLED: ${LLM_TOOL_CALLING_ENABLED:-true}
       META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-meu-verify-token-secreto}
       META_APP_SECRET: ${META_APP_SECRET:-super-secret-app-secret-trocar}
       META_TOKEN: ${META_TOKEN:-mock-token}
@@ -84,6 +86,8 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-proj-troque-pela-sua-chave}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_TOOL_CALLING_ENABLED: ${LLM_TOOL_CALLING_ENABLED:-true}
       META_TOKEN: ${META_TOKEN:-mock-token}
       META_API_BASE_URL: http://mock-meta:8001
       META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-123456789012345}

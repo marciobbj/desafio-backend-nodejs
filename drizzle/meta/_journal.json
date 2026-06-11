@@ -8,6 +8,13 @@
       "when": 1781215550475,
       "tag": "0000_salty_echo",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781218571619,
+      "tag": "0001_smiling_tombstone",
+      "breakpoints": true
     }
   ]
 }

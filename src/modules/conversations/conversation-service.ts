@@ -72,52 +72,87 @@ export async function persistInboundMessage(db: DbClient, input: InboundMessageI
       .onConflictDoNothing()
       .returning();
 
+    const persistedMessage =
+      message ??
+      (await tx.query.messages.findFirst({
+        where: and(eq(messages.tenantId, input.tenantId), eq(messages.waMessageId, input.waMessageId)),
+      }));
+
+    if (!persistedMessage) {
+      throw new Error("Failed to persist inbound message");
+    }
+
     return {
       inserted: Boolean(message),
       contact,
       conversation,
-      message,
+      message: persistedMessage,
     };
   });
 }
 
-export async function createOutboundMessage(
+export async function findOutboundReplyForInbound(
+  db: DbClient,
+  input: { tenantId: string; inboundMessageId: string },
+) {
+  return db.query.messages.findFirst({
+    where: and(
+      eq(messages.tenantId, input.tenantId),
+      eq(messages.idempotencyKey, `reply__${input.inboundMessageId}`),
+    ),
+  });
+}
+
+export async function createOrGetOutboundReply(
   db: DbClient,
   input: {
     tenantId: string;
     conversationId: string;
     contactId: string;
+    inboundMessageId: string;
     body: string;
     status?: string;
     providerPayload?: unknown;
   },
 ) {
+  const idempotencyKey = `reply__${input.inboundMessageId}`;
   const [message] = await db
     .insert(messages)
     .values({
       tenantId: input.tenantId,
       conversationId: input.conversationId,
       contactId: input.contactId,
+      idempotencyKey,
       direction: "outbound",
       body: input.body,
       status: input.status ?? "pending",
       providerPayload: input.providerPayload,
     })
+    .onConflictDoNothing()
     .returning();
 
-  if (!message) {
+  const persistedMessage =
+    message ??
+    (await findOutboundReplyForInbound(db, {
+      tenantId: input.tenantId,
+      inboundMessageId: input.inboundMessageId,
+    }));
+
+  if (!persistedMessage) {
     throw new Error("Failed to create outbound message");
   }
 
-  await db
-    .update(conversations)
-    .set({
-      lastMessageAt: message.createdAt,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(conversations.id, input.conversationId), eq(conversations.tenantId, input.tenantId)));
+  if (message) {
+    await db
+      .update(conversations)
+      .set({
+        lastMessageAt: message.createdAt,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(conversations.id, input.conversationId), eq(conversations.tenantId, input.tenantId)));
+  }
 
-  return message;
+  return persistedMessage;
 }
 
 export async function markMessageSent(db: DbClient, messageId: string, providerPayload: unknown) {
@@ -128,6 +163,10 @@ export async function markMessageSent(db: DbClient, messageId: string, providerP
       providerPayload,
     })
     .where(eq(messages.id, messageId));
+}
+
+export async function markMessageStatus(db: DbClient, messageId: string, status: string) {
+  await db.update(messages).set({ status }).where(eq(messages.id, messageId));
 }
 
 export async function getConversationForJob(

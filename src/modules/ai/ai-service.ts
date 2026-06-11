@@ -68,6 +68,18 @@ function buildSystemPrompt(context: string) {
   ].join("\n");
 }
 
+function isPlaceholderApiKey(apiKey: string | undefined) {
+  return !apiKey || apiKey.includes("troque-pela-sua-chave");
+}
+
+function hasConfiguredLlm() {
+  return Boolean(config.OPENAI_BASE_URL || !isPlaceholderApiKey(config.OPENAI_API_KEY));
+}
+
+function normalizeOpenAiBaseUrl(baseUrl: string) {
+  return baseUrl.replace(/\/$/, "").endsWith("/v1") ? baseUrl.replace(/\/$/, "") : `${baseUrl.replace(/\/$/, "")}/v1`;
+}
+
 async function generateLocalReply(question: string) {
   const protocol = question.match(/\bPED-\d{4,}\b/i)?.[0];
   if (protocol) {
@@ -86,7 +98,11 @@ async function generateLocalReply(question: string) {
 }
 
 export async function generateReply(input: GenerateReplyInput) {
-  if (!config.OPENAI_API_KEY || config.OPENAI_API_KEY.includes("troque-pela-sua-chave")) {
+  if (!hasConfiguredLlm()) {
+    logger.info(
+      { tenantId: input.tenantId, conversationId: input.conversationId },
+      "Generating reply with local knowledge-base fallback",
+    );
     return generateLocalReply(input.question);
   }
 
@@ -97,17 +113,58 @@ export async function generateReply(input: GenerateReplyInput) {
   ];
 
   const model = new ChatOpenAI({
-    apiKey: config.OPENAI_API_KEY,
+    apiKey: isPlaceholderApiKey(config.OPENAI_API_KEY) ? "lm-studio" : config.OPENAI_API_KEY,
     model: config.OPENAI_MODEL,
     temperature: 0.1,
     maxRetries: 2,
+    configuration: config.OPENAI_BASE_URL
+      ? {
+          baseURL: normalizeOpenAiBaseUrl(config.OPENAI_BASE_URL),
+        }
+      : undefined,
   });
+
+  logger.info(
+    {
+      tenantId: input.tenantId,
+      conversationId: input.conversationId,
+      model: config.OPENAI_MODEL,
+      baseURL: config.OPENAI_BASE_URL,
+      toolCallingEnabled: config.LLM_TOOL_CALLING_ENABLED,
+    },
+    "Generating reply with LangChain chat model",
+  );
+
+  if (!config.LLM_TOOL_CALLING_ENABLED) {
+    const response = await model.invoke(messages);
+    return (
+      messageContentToString(response.content) ||
+      "Nao consegui gerar uma resposta com seguranca a partir da base de conhecimento. Posso encaminhar para atendimento humano."
+    );
+  }
 
   const modelWithTools = model.bindTools([statusTool], {
     tool_choice: "auto",
   });
 
-  const firstResponse = await modelWithTools.invoke(messages);
+  let firstResponse: AIMessage;
+  try {
+    firstResponse = await modelWithTools.invoke(messages);
+  } catch (err) {
+    if (!config.OPENAI_BASE_URL) {
+      throw err;
+    }
+
+    logger.warn(
+      { err, tenantId: input.tenantId, conversationId: input.conversationId },
+      "LLM tool call failed on OpenAI-compatible endpoint; retrying without tools",
+    );
+    const response = await model.invoke(messages);
+    return (
+      messageContentToString(response.content) ||
+      "Nao consegui gerar uma resposta com seguranca a partir da base de conhecimento. Posso encaminhar para atendimento humano."
+    );
+  }
   const toolCalls = firstResponse.tool_calls ?? [];
 
   if (toolCalls.length === 0) {

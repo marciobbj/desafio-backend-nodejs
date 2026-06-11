@@ -1,5 +1,6 @@
 import { Queue, type ConnectionOptions } from "bullmq";
 import { config } from "../../lib/config.js";
+import { buildInboundMessageJobId } from "./job-id.js";
 
 export type ProcessInboundMessageJob = {
   tenantId: string;
@@ -42,6 +43,6 @@ export const inboundMessagesQueue = new Queue<
 
 export async function enqueueInboundMessage(job: ProcessInboundMessageJob) {
   return inboundMessagesQueue.add("process-inbound-message", job, {
-    jobId: `${job.tenantId}__${job.waMessageId}`,
+    jobId: buildInboundMessageJobId(job),
   });
 }

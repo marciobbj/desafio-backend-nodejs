@@ -2,10 +2,14 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../../db/client.js";
 import { config } from "../../lib/config.js";
 import { logger } from "../../lib/logger.js";
-import { persistInboundMessage } from "../../modules/conversations/conversation-service.js";
+import {
+  markMessageStatus,
+  persistInboundMessage,
+} from "../../modules/conversations/conversation-service.js";
 import { enqueueInboundMessage } from "../../modules/queue/queue.js";
 import { resolveTenantByPhoneNumberId } from "../../modules/tenants/tenant-service.js";
 import { parseInboundMessage } from "../../modules/webhook/meta-payload.js";
+import { shouldEnqueueInboundMessage } from "../../modules/webhook/inbound-status.js";
 import { isValidMetaSignature } from "../../modules/webhook/signature.js";
 
 export async function registerWebhookRoutes(app: FastifyInstance) {
@@ -58,13 +62,19 @@ export async function registerWebhookRoutes(app: FastifyInstance) {
       providerPayload: request.body,
     });
 
-    if (result.inserted && result.message) {
+    const shouldEnqueue = shouldEnqueueInboundMessage({
+      inserted: result.inserted,
+      status: result.message.status,
+    });
+
+    if (shouldEnqueue) {
       await enqueueInboundMessage({
         tenantId: channel.tenantId,
         conversationId: result.conversation.id,
         inboundMessageId: result.message.id,
         waMessageId: inbound.waMessageId,
       });
+      await markMessageStatus(db, result.message.id, "enqueued");
 
       logger.info(
         {
@@ -76,11 +86,11 @@ export async function registerWebhookRoutes(app: FastifyInstance) {
       );
     } else {
       logger.info(
-        { tenantId: channel.tenantId, waMessageId: inbound.waMessageId },
+        { tenantId: channel.tenantId, waMessageId: inbound.waMessageId, status: result.message.status },
         "Duplicate inbound message ignored",
       );
     }
 
-    return reply.send({ received: true, duplicate: !result.inserted });
+    return reply.send({ received: true, duplicate: !result.inserted, enqueued: shouldEnqueue });
   });
 }

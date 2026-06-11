@@ -2,6 +2,8 @@ import "dotenv/config";
 import { Worker } from "bullmq";
 import { config } from "./lib/config.js";
 import { logger } from "./lib/logger.js";
+import { db } from "./db/client.js";
+import { markMessageStatus } from "./modules/conversations/conversation-service.js";
 import {
   queueConnection,
   type ProcessInboundMessageJob,
@@ -32,6 +34,15 @@ async function main() {
       },
       "Job failed",
     );
+
+    if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+      void markMessageStatus(db, job.data.inboundMessageId, "failed").catch((updateError) => {
+        logger.error(
+          { err: updateError, jobId: job.id, inboundMessageId: job.data.inboundMessageId },
+          "Failed to mark inbound message as failed",
+        );
+      });
+    }
   });
 
   const shutdown = async () => {
