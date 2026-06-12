@@ -129,11 +129,11 @@ O projeto suporta endpoints OpenAI-compatible via:
 - `OPENAI_API_KEY`
 - `LLM_TOOL_CALLING_ENABLED`
 
-Para LM Studio no host:
+Para LM Studio:
 
-- Rodando backend/worker no host: use `OPENAI_BASE_URL=http://127.0.0.1:1234`.
-- Rodando backend/worker no Docker: use `OPENAI_BASE_URL=http://host.docker.internal:1234`.
-- Em Docker, o LM Studio tambem precisa aceitar conexoes fora de `127.0.0.1`; caso contrario, o container nao chega ao servidor mesmo usando `host.docker.internal`.
+- O fluxo operacional atual roda backend, worker e mock da Meta no host, enquanto Docker fica restrito a Postgres, Redis e LocalStack.
+- Com backend/worker no host, use `OPENAI_BASE_URL=http://127.0.0.1:1234`.
+- Essa escolha evita o problema de `127.0.0.1` dentro do container apontar para o proprio container em vez do host.
 - Para modelos locais que nao suportam tool calling de forma compativel, use `LLM_TOOL_CALLING_ENABLED=false`.
 - Modelos locais podem exigir timeouts maiores; o projeto expoe `LLM_REQUEST_TIMEOUT_MS` para configurar a chamada ao endpoint OpenAI-compatible.
 

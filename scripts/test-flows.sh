@@ -5,8 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 COMPOSE="${COMPOSE:-docker compose}"
+USE_DOCKER_INFRA="${USE_DOCKER_INFRA:-true}"
 BACKEND_URL="${BACKEND_URL:-http://localhost:8000}"
 MOCK_URL="${MOCK_URL:-http://localhost:8001}"
+BACKEND_LOG="${BACKEND_LOG:-/tmp/desafio-backend-smoke-backend.log}"
+WORKER_LOG="${WORKER_LOG:-/tmp/desafio-backend-smoke-worker.log}"
+MOCK_LOG="${MOCK_LOG:-/tmp/desafio-backend-smoke-mock.log}"
 PHONE="${SMOKE_PHONE:-5511999990000}"
 MESSAGE_ID="${SMOKE_MESSAGE_ID:-wamid.smoke.$(date +%s)}"
 REPLY_MODE="${REPLY_MODE:-deterministic}"
@@ -26,10 +30,7 @@ case "$REPLY_MODE" in
   lmstudio)
     export OPENAI_API_KEY="${OPENAI_API_KEY:-lm-studio}"
     export OPENAI_MODEL="$LMSTUDIO_MODEL"
-    export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://host.docker.internal:1234}"
-    if [[ "$OPENAI_BASE_URL" == "http://127.0.0.1:1234" || "$OPENAI_BASE_URL" == "http://localhost:1234" ]]; then
-      export OPENAI_BASE_URL="http://host.docker.internal:1234"
-    fi
+    export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://127.0.0.1:1234}"
     export LLM_TOOL_CALLING_ENABLED="${LLM_TOOL_CALLING_ENABLED:-false}"
     export LLM_REQUEST_TIMEOUT_MS
     RESPONSE_TIMEOUT_SECONDS="${SMOKE_RESPONSE_TIMEOUT_SECONDS:-240}"
@@ -66,6 +67,25 @@ echo "[resposta] timeout aguardando outbound=${RESPONSE_TIMEOUT_SECONDS}s"
 section() {
   printf "\n==> %s\n" "$1"
 }
+
+cleanup() {
+  if [[ -n "${MOCK_PID:-}" ]] && kill -0 "$MOCK_PID" >/dev/null 2>&1; then
+    kill "$MOCK_PID" >/dev/null 2>&1 || true
+    wait "$MOCK_PID" 2>/dev/null || true
+  fi
+
+  if [[ -n "${WORKER_PID:-}" ]] && kill -0 "$WORKER_PID" >/dev/null 2>&1; then
+    kill "$WORKER_PID" >/dev/null 2>&1 || true
+    wait "$WORKER_PID" 2>/dev/null || true
+  fi
+
+  if [[ -n "${BACKEND_PID:-}" ]] && kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
+    kill "$BACKEND_PID" >/dev/null 2>&1 || true
+    wait "$BACKEND_PID" 2>/dev/null || true
+  fi
+}
+
+trap cleanup EXIT
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -119,25 +139,52 @@ print_json() {
   printf "\n"
 }
 
-require_cmd docker
 require_cmd curl
 require_cmd node
 require_cmd npm
+if [[ "$USE_DOCKER_INFRA" == "true" ]]; then
+  require_cmd docker
+fi
 
 if [[ ! -f .env ]]; then
   section "Criando .env a partir de .env.example"
   cp .env.example .env
 fi
 
-section "Instalando dependencias locais quando necessario"
-if [[ ! -d node_modules ]]; then
-  npm ci
+section "Garantindo dependencias locais compativeis com o host"
+npm install
+
+if [[ "$USE_DOCKER_INFRA" == "true" ]]; then
+  section "Subindo infraestrutura Docker"
+  $COMPOSE up -d --remove-orphans postgres redis localstack
+  $COMPOSE stop mock-meta >/dev/null 2>&1 || true
 else
-  echo "node_modules ja existe; pulando npm ci"
+  section "Usando Postgres e Redis locais"
+  echo "USE_DOCKER_INFRA=false: assumindo DATABASE_URL e REDIS_URL acessiveis no host."
 fi
 
-section "Buildando e subindo containers"
-$COMPOSE up -d --build postgres redis backend worker mock-meta
+section "Rodando typecheck no host"
+npm run typecheck
+
+section "Rodando testes no host"
+npm test
+
+section "Aplicando migrations no host"
+npm run db:migrate
+
+section "Iniciando mock Meta no host"
+rm -f "$MOCK_LOG"
+META_APP_SECRET="${META_APP_SECRET:-super-secret-app-secret-trocar}" \
+CANDIDATE_WEBHOOK_URL="${CANDIDATE_WEBHOOK_URL:-http://localhost:8000/webhook}" \
+node mock-meta-server/server.js >"$MOCK_LOG" 2>&1 &
+MOCK_PID="$!"
+echo "Mock PID=$MOCK_PID log=$MOCK_LOG"
+
+section "Iniciando backend no host"
+rm -f "$BACKEND_LOG" "$WORKER_LOG"
+npm run dev >"$BACKEND_LOG" 2>&1 &
+BACKEND_PID="$!"
+echo "Backend PID=$BACKEND_PID log=$BACKEND_LOG"
 
 section "Aguardando servicos"
 wait_http "$BACKEND_URL/health" "backend"
@@ -147,8 +194,8 @@ print_json "Health backend" "$BACKEND_URL/health"
 print_json "Health mock-meta" "$MOCK_URL/health"
 
 if [[ "$REPLY_MODE" == "lmstudio" ]]; then
-  section "Validando acesso do container ao LM Studio"
-  $COMPOSE exec -T backend node - "$OPENAI_BASE_URL" <<'NODE'
+  section "Validando acesso do host ao LM Studio"
+  node - "$OPENAI_BASE_URL" <<'NODE'
 const rawBaseUrl = process.argv[2];
 const baseUrl = rawBaseUrl.replace(/\/$/, "");
 const modelsUrl = `${baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`}/models`;
@@ -164,12 +211,11 @@ try {
     console.error(body.slice(0, 500));
     process.exit(1);
   }
-  console.log(`LM Studio acessivel a partir do container: ${modelsUrl}`);
+  console.log(`LM Studio acessivel a partir do host: ${modelsUrl}`);
   console.log(body.slice(0, 500));
 } catch (err) {
-  console.error(`Nao consegui acessar LM Studio a partir do container em ${modelsUrl}.`);
-  console.error("Se o backend/worker rodam no Docker, 127.0.0.1 aponta para o container.");
-  console.error("Use OPENAI_BASE_URL=http://host.docker.internal:1234 e configure o LM Studio para aceitar conexoes fora de localhost, ou rode backend/worker no host.");
+  console.error(`Nao consegui acessar LM Studio a partir do host em ${modelsUrl}.`);
+  console.error("Confirme se o servidor OpenAI-compatible do LM Studio esta ativo e se o modelo foi carregado.");
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
 } finally {
@@ -193,17 +239,14 @@ case "$REPLY_MODE" in
     ;;
 esac
 
-section "Garantindo dependencias compativeis dentro do container backend"
-$COMPOSE exec -T backend npm install
-
-section "Rodando typecheck dentro do container backend"
-$COMPOSE exec -T backend npm run typecheck
-
-section "Rodando testes dentro do container backend"
-$COMPOSE exec -T backend npm test
+section "Iniciando worker no host"
+npm run worker >"$WORKER_LOG" 2>&1 &
+WORKER_PID="$!"
+echo "Worker PID=$WORKER_PID log=$WORKER_LOG"
+sleep 2
 
 section "Gerando JWT de desenvolvimento"
-TOKEN="$($COMPOSE exec -T backend npm run token:dev | tail -n 1 | tr -d '\r')"
+TOKEN="$(npm run token:dev | tail -n 1 | tr -d '\r')"
 echo "TOKEN=$TOKEN"
 
 section "Consultando configuracao de IA do tenant"
@@ -257,9 +300,11 @@ if (( AFTER_COUNT <= BEFORE_COUNT )); then
     echo "Para modelos locais, confirme se o modelo ja terminou de carregar no LM Studio ou aumente SMOKE_RESPONSE_TIMEOUT_SECONDS/LLM_REQUEST_TIMEOUT_MS." >&2
   fi
   section "Logs backend"
-  $COMPOSE logs --tail=80 backend
+  tail -n 80 "$BACKEND_LOG" || true
   section "Logs worker"
-  $COMPOSE logs --tail=120 worker
+  tail -n 120 "$WORKER_LOG" || true
+  section "Logs mock"
+  tail -n 80 "$MOCK_LOG" || true
   exit 1
 fi
 echo "Envios depois do processamento: $AFTER_COUNT"
@@ -294,8 +339,11 @@ curl -fsS "$BACKEND_URL/conversations/$CONVERSATION_ID/messages" \
 printf "\n"
 
 section "Logs recentes do worker"
-$COMPOSE logs --tail=80 worker
+tail -n 80 "$WORKER_LOG" || true
 
 section "Smoke test concluido"
-echo "Ambiente permanece rodando para inspecao."
-echo "Para encerrar: docker compose down"
+echo "Backend, worker e mock locais serao encerrados pelo script."
+if [[ "$USE_DOCKER_INFRA" == "true" ]]; then
+  echo "Infra Docker permanece rodando para inspecao."
+  echo "Para encerrar a infra: docker compose down"
+fi

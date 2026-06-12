@@ -36,37 +36,43 @@ OPENAI_BASE_URL=http://127.0.0.1:1234
 LLM_TOOL_CALLING_ENABLED=false
 ```
 
-Se backend e worker estiverem dentro do Docker, use `host.docker.internal`:
+O fluxo recomendado roda backend e worker no host, entao LM Studio deve usar `OPENAI_BASE_URL=http://127.0.0.1:1234`.
 
-```env
-OPENAI_API_KEY=lm-studio
-OPENAI_MODEL=google/gemma-3n-e4b
-OPENAI_BASE_URL=http://host.docker.internal:1234
-LLM_TOOL_CALLING_ENABLED=false
-```
+## Rodando com infra em Docker e app no host
 
-Se o `.env` estiver com `OPENAI_BASE_URL=http://127.0.0.1:1234`, o modelo local so sera acessivel quando backend e worker rodarem no host. Para Docker, troque para `http://host.docker.internal:1234`.
-
-## Rodando tudo com Docker
-
-Instale as dependencias localmente primeiro. O compose monta o diretorio do projeto dentro dos containers, incluindo `node_modules`.
+Este e o modo recomendado para desenvolvimento, smoke tests e LM Studio. Docker sobe Postgres, Redis e LocalStack; backend, worker e mock da Meta rodam no host.
 
 ```bash
 npm install
 cp .env.example .env
-docker compose up -d --build
+docker compose up -d postgres redis localstack
 ```
 
 O compose sobe:
 
 - Postgres em `localhost:5432`
 - Redis em `localhost:6379`
-- backend em `localhost:8000`
-- worker
-- mock da Meta em `localhost:8001`
 - LocalStack em `localhost:4566`
 
-O backend executa `npm run db:migrate` no boot.
+Depois rode migrations, backend, worker e mock no host.
+
+```bash
+npm run db:migrate
+npm run dev
+```
+
+Em outro terminal:
+
+```bash
+npm run worker
+```
+
+Em outro terminal:
+
+```bash
+cd mock-meta-server
+CANDIDATE_WEBHOOK_URL=http://localhost:8000/webhook npm start
+```
 
 Verifique os servicos:
 
@@ -93,9 +99,9 @@ curl http://localhost:8001/sent
 Logs:
 
 ```bash
-docker compose logs -f backend
-docker compose logs -f worker
-docker compose logs -f mock-meta
+npm run dev
+npm run worker
+cd mock-meta-server && npm start
 ```
 
 Parar o ambiente:
@@ -110,25 +116,17 @@ Para apagar tambem o volume do Postgres:
 docker compose down -v
 ```
 
-## Rodando app no host com infra em Docker
+## Rodando somente a infraestrutura Docker
 
-Este modo e o mais pratico para desenvolver e para testar LM Studio em `http://127.0.0.1:1234`.
-
-Suba apenas a infraestrutura:
+Se preferir subir explicitamente apenas os servicos de apoio:
 
 ```bash
 npm install
 cp .env.example .env
-docker compose up -d postgres redis mock-meta
+docker compose up -d postgres redis localstack
 ```
 
-Nesse modo, o mock precisa entregar webhooks para o backend no host:
-
-```bash
-CANDIDATE_WEBHOOK_URL=http://host.docker.internal:8000/webhook docker compose up -d --force-recreate mock-meta
-```
-
-Em seguida, aplique migrations e rode backend e worker no host:
+Em seguida, aplique migrations e rode backend, worker e mock no host:
 
 ```bash
 npm run db:migrate
@@ -141,12 +139,9 @@ Em outro terminal:
 npm run worker
 ```
 
-Simule uma mensagem:
-
 ```bash
-curl -X POST http://localhost:8001/simulate/inbound \
-  -H "Content-Type: application/json" \
-  -d '{ "from": "5511999990000", "text": "Quais sao os planos de voces?" }'
+cd mock-meta-server
+CANDIDATE_WEBHOOK_URL=http://localhost:8000/webhook npm start
 ```
 
 ## Rodando sem Docker
@@ -186,13 +181,7 @@ Em outro terminal:
 npm run worker
 ```
 
-O mock da Meta tambem precisa estar rodando. A forma mais simples e manter apenas o mock via Docker:
-
-```bash
-CANDIDATE_WEBHOOK_URL=http://host.docker.internal:8000/webhook docker compose up -d mock-meta
-```
-
-Se quiser realmente evitar Docker tambem para o mock, rode o servidor diretamente:
+O mock da Meta tambem precisa estar rodando:
 
 ```bash
 cd mock-meta-server
@@ -237,13 +226,7 @@ App no host:
 OPENAI_BASE_URL=http://127.0.0.1:1234
 ```
 
-App no Docker:
-
-```env
-OPENAI_BASE_URL=http://host.docker.internal:1234
-```
-
-Importante: `127.0.0.1` dentro do container e o proprio container, nao o host. Para backend/worker em Docker, o LM Studio precisa estar acessivel em `host.docker.internal:1234`. Se der timeout, habilite no LM Studio a opcao de aceitar conexoes da rede/local network, ou rode backend e worker no host usando `OPENAI_BASE_URL=http://127.0.0.1:1234`.
+Como backend e worker rodam no host, use `OPENAI_BASE_URL=http://127.0.0.1:1234`. Se voce decidir rodar backend/worker dentro de Docker por conta propria, `127.0.0.1` passa a ser o container, e nesse caso seria necessario usar `host.docker.internal`.
 
 Para modelos locais, mantenha:
 
@@ -258,7 +241,7 @@ Smoke test:
 REPLY_MODE=lmstudio ./scripts/test-flows.sh
 ```
 
-O script valida primeiro `GET /v1/models` a partir do container backend. Se essa checagem falhar, o problema e conectividade entre Docker e host, nao a cadeia LangChain.
+O script valida primeiro `GET /v1/models` a partir do host. Se essa checagem falhar, o LM Studio nao esta servindo a API OpenAI-compatible na URL configurada.
 
 Modelos locais podem demorar no primeiro carregamento. Para aumentar a espera do smoke test:
 
@@ -346,10 +329,16 @@ npm run typecheck
 npm test
 ```
 
-Smoke test completo com Docker:
+Smoke test completo com infra Docker e app/mock no host:
 
 ```bash
 ./scripts/test-flows.sh
+```
+
+O script sobe Postgres/Redis/LocalStack via Docker por padrao, mas executa backend, worker e mock no host. Se voce ja tem Postgres e Redis locais:
+
+```bash
+USE_DOCKER_INFRA=false ./scripts/test-flows.sh
 ```
 
 Por padrao, o script usa o fallback local deterministico para nao depender de OpenAI/LM Studio. O modo pode ser escolhido explicitamente:
