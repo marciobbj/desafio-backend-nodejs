@@ -274,6 +274,18 @@ npm run typecheck
 npm test
 ```
 
+Smoke test completo com Docker:
+
+```bash
+./scripts/test-flows.sh
+```
+
+Por padrao, o script usa o fallback local deterministico para nao depender de OpenAI/LM Studio. Para testar com a configuracao LLM do `.env`:
+
+```bash
+USE_CONFIGURED_LLM=true ./scripts/test-flows.sh
+```
+
 Cobertura atual:
 
 - assinatura do webhook
