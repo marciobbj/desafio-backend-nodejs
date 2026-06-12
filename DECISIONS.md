@@ -243,6 +243,23 @@ Limites atuais da cobertura:
 - Lock distribuido por conversa ainda nao foi implementado.
 - DLQ dedicada ainda nao foi implementada alem dos retries do BullMQ.
 - Retrieval semantico com embeddings ficou fora do escopo.
-- Controle de quotas/custo por tenant ainda nao foi implementado.
 - Prompt versionado por tenant ainda nao foi implementado.
-- Sem LM Studio ou chave OpenAI configurada, o worker falha o job em vez de gerar resposta local.
+- Sem LM Studio ou chave OpenAI configurada, o job falha e fica sujeito aos retries do BullMQ.
+
+## Controle de Custos e Limites (Implementação Inicial e Expansão)
+
+Implementamos um controle simplificado de orçamento mensal por tenant:
+- Adicionamos as colunas opcionais `monthly_budget_usd` (orçamento máximo) e `current_month_spend_usd` (gasto acumulado) à tabela `tenant_ai_settings`.
+- No serviço de IA (`generateReply`), validamos se o gasto acumulado atingiu ou superou o limite do tenant. Caso positivo, a chamada à LLM é abortada e uma resposta amigável de fallback é retornada instantaneamente, preservando tokens e custos.
+- Testes unitários cobrem e asseguram esse comportamento em `src/test/cost-control.test.ts`.
+
+### Como expandir para produção de forma robusta:
+1. **Cálculo Real por Chamada**:
+   - Extrair o consumo exato de tokens da resposta da LLM (`tokenUsage` no LangChain).
+   - Multiplicar os tokens de entrada e saída pelos custos respectivos do modelo configurado e atualizar incrementalmente o campo `current_month_spend_usd` no banco.
+2. **Histórico e Auditoria**:
+   - Criar uma tabela `llm_usage_logs` para registrar o consumo individual de cada mensagem (tokens, modelo, custo individual e data) para prestação de contas.
+3. **Alertas de Consumo**:
+   - Disparar notificações por e-mail ou webhooks quando o consumo do tenant atingir limites de alerta (ex: 80% e 100% do orçamento).
+4. **Cron Job de Limpeza**:
+   - Configurar uma tarefa recorrente (BullMQ cron) para resetar o gasto acumulado (`current_month_spend_usd`) para `0` no primeiro dia de cada mês.

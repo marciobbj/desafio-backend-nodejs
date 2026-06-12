@@ -43,6 +43,8 @@ export async function getTenantAiSettings(db: DbClient, tenantId: string) {
     model: tenant.aiSettings?.model ?? undefined,
     temperature: tenant.aiSettings?.temperature ?? undefined,
     toolCallingEnabled: tenant.aiSettings?.toolCallingEnabled ?? undefined,
+    monthlyBudgetUsd: tenant.aiSettings?.monthlyBudgetUsd ?? undefined,
+    currentMonthSpendUsd: tenant.aiSettings?.currentMonthSpendUsd ?? undefined,
   };
 }
 
@@ -52,6 +54,8 @@ export const updateTenantAiSettingsSchema = z
     model: z.string().trim().min(1).nullable().optional(),
     temperature: z.number().min(0).max(2).nullable().optional(),
     toolCallingEnabled: z.boolean().nullable().optional(),
+    monthlyBudgetUsd: z.number().min(0).nullable().optional(),
+    currentMonthSpendUsd: z.number().min(0).nullable().optional(),
   })
   .strict();
 
@@ -98,6 +102,8 @@ export async function updateTenantAiSettings(
       model: input.model,
       temperature: input.temperature,
       toolCallingEnabled: input.toolCallingEnabled,
+      monthlyBudgetUsd: input.monthlyBudgetUsd,
+      currentMonthSpendUsd: input.currentMonthSpendUsd,
       updatedAt: new Date(),
     })
     .onConflictDoUpdate({
@@ -108,6 +114,10 @@ export async function updateTenantAiSettings(
         ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
         ...(input.toolCallingEnabled !== undefined
           ? { toolCallingEnabled: input.toolCallingEnabled }
+          : {}),
+        ...(input.monthlyBudgetUsd !== undefined ? { monthlyBudgetUsd: input.monthlyBudgetUsd } : {}),
+        ...(input.currentMonthSpendUsd !== undefined
+          ? { currentMonthSpendUsd: input.currentMonthSpendUsd }
           : {}),
         updatedAt: new Date(),
       },

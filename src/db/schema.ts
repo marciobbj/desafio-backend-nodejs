@@ -47,6 +47,8 @@ export const tenantAiSettings = pgTable("tenant_ai_settings", {
   model: text("model"),
   temperature: doublePrecision("temperature"),
   toolCallingEnabled: boolean("tool_calling_enabled"),
+  monthlyBudgetUsd: doublePrecision("monthly_budget_usd"),
+  currentMonthSpendUsd: doublePrecision("current_month_spend_usd"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

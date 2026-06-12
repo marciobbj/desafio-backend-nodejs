@@ -49,13 +49,31 @@ function messageContentToString(content: unknown) {
 }
 
 function toLangChainHistory(history: Message[]) {
-  return history.slice(-10).map((message): BaseMessage => {
-    if (message.direction === "outbound") {
-      return new AIMessage(message.body);
+  const merged: BaseMessage[] = [];
+
+  for (const message of history.slice(-10)) {
+    const isOutbound = message.direction === "outbound";
+    const last = merged[merged.length - 1];
+
+    if (last) {
+      if (isOutbound && last instanceof AIMessage) {
+        last.content = (typeof last.content === "string" ? last.content : "") + "\n" + message.body;
+        continue;
+      }
+      if (!isOutbound && last instanceof HumanMessage) {
+        last.content = (typeof last.content === "string" ? last.content : "") + "\n" + message.body;
+        continue;
+      }
     }
 
-    return new HumanMessage(message.body);
-  });
+    if (isOutbound) {
+      merged.push(new AIMessage(message.body));
+    } else {
+      merged.push(new HumanMessage(message.body));
+    }
+  }
+
+  return merged;
 }
 
 function isPlaceholderApiKey(apiKey: string | undefined) {
@@ -68,6 +86,23 @@ function normalizeOpenAiBaseUrl(baseUrl: string) {
 
 export async function generateReply(input: GenerateReplyInput) {
   const aiSettings = await getTenantAiSettings(db, input.tenantId);
+
+  // Verifica se o orçamento mensal foi configurado e se o limite de gastos foi atingido
+  if (
+    aiSettings.monthlyBudgetUsd !== undefined &&
+    aiSettings.currentMonthSpendUsd !== undefined &&
+    aiSettings.currentMonthSpendUsd >= aiSettings.monthlyBudgetUsd
+  ) {
+    logger.warn(
+      {
+        tenantId: input.tenantId,
+        monthlyBudgetUsd: aiSettings.monthlyBudgetUsd,
+        currentMonthSpendUsd: aiSettings.currentMonthSpendUsd,
+      },
+      "Tenant monthly budget exceeded, skipping LLM invocation and returning fallback message",
+    );
+    return "Desculpe, o limite de processamento de mensagens foi atingido. Por favor, tente novamente mais tarde.";
+  }
 
   if (!config.OPENAI_BASE_URL && isPlaceholderApiKey(config.OPENAI_API_KEY)) {
     throw new Error("LLM provider is not configured. Set OPENAI_BASE_URL for LM Studio or OPENAI_API_KEY for OpenAI.");
