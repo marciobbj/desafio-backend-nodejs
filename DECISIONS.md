@@ -30,7 +30,7 @@ Meta Mock
 BullMQ / Redis
   -> worker
     -> carrega mensagem, conversa e historico
-    -> recupera contexto da knowledge-base
+    -> carrega contexto completo da knowledge-base
     -> carrega tenant_ai_settings
     -> monta ChatPromptTemplate do LangChain
     -> chama LLM OpenAI/OpenAI-compatible
@@ -65,7 +65,7 @@ Trade-off:
 ## Idempotencia
 
 - Mensagens inbound da Meta usam indice unico parcial em `(tenant_id, wa_message_id)`.
-- Jobs usam `jobId` deterministico no formato `tenantId__waMessageId`.
+- Jobs usam `jobId` estavel no formato `tenantId__waMessageId`.
 - Mensagens outbound de resposta usam `idempotency_key` por tenant.
 - O worker verifica se ja existe resposta outbound para o inbound antes de gerar e enviar outra.
 - O status da mensagem inbound controla reprocessamento: `received`, `enqueued`, `processing`, `responded`, `failed`.
@@ -85,14 +85,17 @@ O sistema usa LangChain com `ChatPromptTemplate` e `MessagesPlaceholder`.
 
 Decisao atual:
 
+- O worker sempre gera resposta por LLM.
 - O prompt de sistema nao fica mais hardcoded no `ai-service`.
 - A configuracao fica em `tenant_ai_settings`.
 - O template aceita variaveis controladas:
   - `{tenantName}`
   - `{context}`
+- O `{context}` recebe a base `knowledge-base/` completa, carregada dos arquivos Markdown.
 - O historico da conversa entra via `MessagesPlaceholder("history")`.
 - O modelo, temperatura e uso de tool calling podem ser sobrescritos por tenant.
 - Se nao houver configuracao especifica no tenant, o sistema usa os defaults globais do `.env`.
+- Se nao houver LM Studio ou OpenAI configurado, o job falha e fica sujeito aos retries do BullMQ.
 
 Isso foi escolhido porque e o caminho mais defensavel com LangChain:
 
@@ -148,7 +151,7 @@ Trade-offs:
 
 - O LM Studio exercita o caminho LangChain/LLM sem custo externo, mas depende da capacidade e compatibilidade do modelo local.
 - A OpenAI externa e o alvo principal de producao, mas exige credencial e pode gerar custo.
-- O fallback deterministico foi removido para que os smoke tests exercitem sempre o caminho real de LLM.
+- O fallback local sem LLM foi removido para que smoke tests e execucoes reais exercitem sempre o caminho de LLM.
 
 ## API REST
 
@@ -186,7 +189,7 @@ Drizzle migrations atuais:
 ## Knowledge base
 
 - A base em `knowledge-base/` e carregada inteira como contexto do `systemPrompt`.
-- Nao ha mais recuperacao lexical por pergunta nem resposta local deterministica.
+- Nao ha mais recuperacao lexical por pergunta nem resposta local sem LLM.
 - Para a base pequena do desafio, carregar o contexto completo reduz complexidade e evita um RAG lexical fraco.
 - Uma evolucao natural, se a base crescer, seria persistir embeddings por tenant e usar vector search.
 
@@ -196,7 +199,7 @@ Foi implementada a ferramenta:
 
 - `consultar_status_pedido(protocol: PED-XXXX)`
 
-Ela retorna dados deterministicas em memoria para demonstrar o fluxo de tool calling sem depender de servico externo.
+Ela retorna dados estaticos em memoria para demonstrar o fluxo de tool calling sem depender de servico externo.
 
 ## Observabilidade
 
@@ -216,14 +219,14 @@ O foco da cobertura e proteger as regras de negocio e as fronteiras criticas do 
 - reentrega completa do mesmo webhook sem novo enqueue;
 - resolucao de tenant por `tenant_channels.phone_number_id`;
 - isolamento das rotas REST pelo `tenantId` autenticado;
-- regras de idempotencia async e `jobId` compativel com BullMQ;
+- regras de idempotencia async e `jobId` estavel compativel com BullMQ;
 - worker reaproveitando outbound pendente em retry;
 - worker ignorando outbound ja enviado para nao duplicar resposta;
 - falha no envio para a Meta propagando erro para permitir retry do BullMQ;
 - carregamento da `knowledge-base/` como contexto da LLM;
 - validacao do template LangChain por tenant.
 
-Alguns testes de fluxo usam mocks nas bordas de banco, fila, LLM e Meta. Essa escolha mantem o `npm test` rapido, deterministico e sem depender de Postgres, Redis, LM Studio ou chave da OpenAI.
+Alguns testes de fluxo usam mocks nas bordas de banco, fila, LLM e Meta. Essa escolha mantem o `npm test` rapido, reprodutivel e sem depender de Postgres, Redis, LM Studio ou chave da OpenAI.
 
 O smoke script complementa essa cobertura exercitando o caminho de ponta a ponta com infraestrutura real local: webhook, Postgres, Redis/BullMQ, worker, LLM via LM Studio/OpenAI e mock da Meta.
 
