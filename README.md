@@ -344,6 +344,21 @@ Use `REPLY_MODE=lmstudio` quando quiser testar um servidor local OpenAI-compatib
 
 Use `REPLY_MODE=openai` quando quiser testar a API oficial da OpenAI. A chave pode ser passada inline ou estar no `.env`.
 
+### Smoke Test de Controle de Custo
+
+Para validar o funcionamento do controle de custos e travamento de orçamento por tenant, existe um script de teste de fumaça focado:
+
+```bash
+REPLY_MODE=lmstudio ./scripts/test-cost-control.sh
+REPLY_MODE=openai OPENAI_API_KEY=sk-... ./scripts/test-cost-control.sh
+```
+
+Esse script realiza as seguintes etapas:
+1. Define um orçamento baixo de `0.01` USD para o tenant e zera o gasto mensal (`0.00` USD).
+2. Envia uma mensagem inbound simulada e valida que ela é respondida normalmente pela LLM.
+3. Atualiza o gasto do tenant para `0.02` USD via API (simulando que o orçamento mensal foi estourado).
+4. Envia uma segunda mensagem inbound e garante que a chamada à LLM é interceptada, devolvendo a resposta estática de fallback sem gerar custos.
+
 Cobertura atual:
 
 - assinatura do webhook
