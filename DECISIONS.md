@@ -237,15 +237,6 @@ Limites atuais da cobertura:
 - nao ha assercao automatizada de qualidade semantica da resposta da LLM;
 - o caminho OpenAI/LM Studio real fica validado pelo smoke script, nao pela suite unit/integration rapida.
 
-## Limites conscientes
-
-- Login real e gestao de usuarios ficaram fora do escopo.
-- Lock distribuido por conversa ainda nao foi implementado.
-- DLQ dedicada ainda nao foi implementada alem dos retries do BullMQ.
-- Retrieval semantico com embeddings ficou fora do escopo.
-- Prompt versionado por tenant ainda nao foi implementado.
-- Sem LM Studio ou chave OpenAI configurada, o job falha e fica sujeito aos retries do BullMQ.
-
 ## Controle de Custos e Limites (Implementação Inicial e Expansão)
 
 Implementamos um controle simplificado de orçamento mensal por tenant:
@@ -263,3 +254,12 @@ Implementamos um controle simplificado de orçamento mensal por tenant:
    - Disparar notificações por e-mail ou webhooks quando o consumo do tenant atingir limites de alerta (ex: 80% e 100% do orçamento).
 4. **Cron Job de Limpeza**:
    - Configurar uma tarefa recorrente (BullMQ cron) para resetar o gasto acumulado (`current_month_spend_usd`) para `0` no primeiro dia de cada mês.
+
+## Limites conscientes
+
+- Login real e gestao de usuarios ficaram fora do escopo.
+- Lock distribuido por conversa ainda nao foi implementado.
+- DLQ dedicada ainda nao foi implementada alem dos retries do BullMQ.
+- Retrieval semantico com embeddings ficou fora do escopo.
+- Prompt versionado por tenant ainda nao foi implementado.
+- Sem LM Studio ou chave OpenAI configurada, o job falha e fica sujeito aos retries do BullMQ.
