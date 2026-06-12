@@ -6,7 +6,7 @@ import { db } from "../../db/client.js";
 import type { Message } from "../../db/schema.js";
 import { config } from "../../lib/config.js";
 import { logger } from "../../lib/logger.js";
-import { retrieveKnowledge } from "./knowledge-base.js";
+import { loadKnowledgeBaseContext } from "./knowledge-base.js";
 import { consultarStatusPedido } from "./order-status-tool.js";
 import { getTenantAiSettings } from "./tenant-ai-settings.js";
 
@@ -62,43 +62,18 @@ function isPlaceholderApiKey(apiKey: string | undefined) {
   return !apiKey || apiKey.includes("troque-pela-sua-chave");
 }
 
-function hasConfiguredLlm() {
-  return Boolean(config.OPENAI_BASE_URL || !isPlaceholderApiKey(config.OPENAI_API_KEY));
-}
-
 function normalizeOpenAiBaseUrl(baseUrl: string) {
   return baseUrl.replace(/\/$/, "").endsWith("/v1") ? baseUrl.replace(/\/$/, "") : `${baseUrl.replace(/\/$/, "")}/v1`;
-}
-
-async function generateLocalReply(question: string) {
-  const protocol = question.match(/\bPED-\d{4,}\b/i)?.[0];
-  if (protocol) {
-    return consultarStatusPedido(protocol);
-  }
-
-  const context = await retrieveKnowledge(question, 2);
-  if (context.length === 0) {
-    return "Nao encontrei essa informacao na base de conhecimento. Posso encaminhar para atendimento humano.";
-  }
-
-  return context
-    .join("\n\n")
-    .replace(/^#\s+/gm, "")
-    .slice(0, 900);
 }
 
 export async function generateReply(input: GenerateReplyInput) {
   const aiSettings = await getTenantAiSettings(db, input.tenantId);
 
-  if (!hasConfiguredLlm()) {
-    logger.info(
-      { tenantId: input.tenantId, conversationId: input.conversationId },
-      "Generating reply with local knowledge-base fallback",
-    );
-    return generateLocalReply(input.question);
+  if (!config.OPENAI_BASE_URL && isPlaceholderApiKey(config.OPENAI_API_KEY)) {
+    throw new Error("LLM provider is not configured. Set OPENAI_BASE_URL for LM Studio or OPENAI_API_KEY for OpenAI.");
   }
 
-  const context = (await retrieveKnowledge(input.question)).join("\n\n---\n\n");
+  const context = await loadKnowledgeBaseContext();
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", aiSettings.systemPrompt],
     new MessagesPlaceholder("history"),

@@ -139,17 +139,16 @@ Para LM Studio:
 
 Esta opcao foi adicionada por necessidade pratica durante a implementacao: testar o fluxo real de LLM sem depender de uma chave externa da OpenAI. A decisao foi manter a integracao passando pelo mesmo `ChatOpenAI` do LangChain, alterando apenas `OPENAI_BASE_URL`, em vez de criar um provider paralelo para modelo local.
 
-Com isso existem tres caminhos suportados para formar a resposta:
+Com isso existem dois caminhos suportados para formar a resposta:
 
-- **Deterministico**: sem LLM configurada; o worker usa a knowledge base local por busca lexical e retorna `generateLocalReply`.
 - **LM Studio**: LLM local via endpoint OpenAI-compatible; o worker usa LangChain, `ChatPromptTemplate`, `tenant_ai_settings` e `ChatOpenAI` apontando para `OPENAI_BASE_URL`.
 - **OpenAI**: API externa da OpenAI; o worker usa o mesmo fluxo LangChain e pode habilitar tool calling quando suportado.
 
 Trade-offs:
 
-- O modo deterministico e previsivel e bom para smoke tests, mas nao exercita geracao real.
 - O LM Studio exercita o caminho LangChain/LLM sem custo externo, mas depende da capacidade e compatibilidade do modelo local.
 - A OpenAI externa e o alvo principal de producao, mas exige credencial e pode gerar custo.
+- O fallback deterministico foi removido para que os smoke tests exercitem sempre o caminho real de LLM.
 
 ## API REST
 
@@ -186,9 +185,10 @@ Drizzle migrations atuais:
 
 ## Knowledge base
 
-- A recuperacao atual e lexical sobre arquivos em `knowledge-base/`.
-- Para a base pequena do desafio, essa escolha e previsivel e suficiente.
-- Uma evolucao natural seria persistir embeddings por tenant e usar vector search.
+- A base em `knowledge-base/` e carregada inteira como contexto do `systemPrompt`.
+- Nao ha mais recuperacao lexical por pergunta nem resposta local deterministica.
+- Para a base pequena do desafio, carregar o contexto completo reduz complexidade e evita um RAG lexical fraco.
+- Uma evolucao natural, se a base crescer, seria persistir embeddings por tenant e usar vector search.
 
 ## Tool calling
 
@@ -212,4 +212,4 @@ Ela retorna dados deterministicas em memoria para demonstrar o fluxo de tool cal
 - Retrieval semantico com embeddings ficou fora do escopo.
 - Controle de quotas/custo por tenant ainda nao foi implementado.
 - Prompt versionado por tenant ainda nao foi implementado.
-- O fallback local sem LLM ainda e simples e nao passa por uma cadeia LangChain.
+- Sem LM Studio ou chave OpenAI configurada, o worker falha o job em vez de gerar resposta local.

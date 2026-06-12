@@ -86,12 +86,12 @@ export async function processInboundMessage(job: Job<ProcessInboundMessageJob>) 
     const outbound =
       existingOutbound ??
       (await createOrGetOutboundReply(db, {
-      tenantId: job.data.tenantId,
-      conversationId: conversation.id,
-      contactId: conversation.contactId,
-      inboundMessageId: inboundMessage.id,
-      body: answer,
-      status: "pending",
+        tenantId: job.data.tenantId,
+        conversationId: conversation.id,
+        contactId: conversation.contactId,
+        inboundMessageId: inboundMessage.id,
+        body: answer,
+        status: "pending",
       }));
 
     await markMessageStatus(db, outbound.id, "sending");

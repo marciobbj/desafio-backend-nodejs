@@ -13,20 +13,12 @@ WORKER_LOG="${WORKER_LOG:-/tmp/desafio-backend-smoke-worker.log}"
 MOCK_LOG="${MOCK_LOG:-/tmp/desafio-backend-smoke-mock.log}"
 PHONE="${SMOKE_PHONE:-5511999990000}"
 MESSAGE_ID="${SMOKE_MESSAGE_ID:-wamid.smoke.$(date +%s)}"
-REPLY_MODE="${REPLY_MODE:-deterministic}"
+REPLY_MODE="${REPLY_MODE:-lmstudio}"
 LMSTUDIO_MODEL="${LMSTUDIO_MODEL:-google/gemma-3n-e4b}"
 OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
 LLM_REQUEST_TIMEOUT_MS="${LLM_REQUEST_TIMEOUT_MS:-600000}"
 
 case "$REPLY_MODE" in
-  deterministic)
-    export OPENAI_API_KEY="sk-proj-troque-pela-sua-chave"
-    export OPENAI_BASE_URL=""
-    export LLM_TOOL_CALLING_ENABLED="false"
-    RESPONSE_TIMEOUT_SECONDS="${SMOKE_RESPONSE_TIMEOUT_SECONDS:-60}"
-    REPLY_PATH="deterministico"
-    REPLY_DESCRIPTION="Sem LLM configurada: worker usa retrieveKnowledge() e generateLocalReply() para responder a partir da knowledge-base."
-    ;;
   lmstudio)
     export OPENAI_API_KEY="${OPENAI_API_KEY:-lm-studio}"
     export OPENAI_MODEL="$LMSTUDIO_MODEL"
@@ -51,7 +43,7 @@ case "$REPLY_MODE" in
     REPLY_DESCRIPTION="OpenAI externa: worker monta ChatPromptTemplate, chama ChatOpenAI na API OpenAI e pode usar tool calling conforme LLM_TOOL_CALLING_ENABLED."
     ;;
   *)
-    echo "REPLY_MODE invalido: $REPLY_MODE. Use deterministic, lmstudio ou openai." >&2
+    echo "REPLY_MODE invalido: $REPLY_MODE. Use lmstudio ou openai." >&2
     exit 1
     ;;
 esac
@@ -228,14 +220,11 @@ section "Caminho de geracao da resposta"
 echo "Modo selecionado: $REPLY_PATH"
 echo "$REPLY_DESCRIPTION"
 case "$REPLY_MODE" in
-  deterministic)
-    echo "Fluxo: webhook -> BullMQ -> worker -> knowledge-base lexical -> generateLocalReply -> Meta mock"
-    ;;
   lmstudio)
-    echo "Fluxo: webhook -> BullMQ -> worker -> knowledge-base lexical -> tenant_ai_settings -> LangChain ChatPromptTemplate -> LM Studio ($OPENAI_BASE_URL) -> Meta mock"
+    echo "Fluxo: webhook -> BullMQ -> worker -> knowledge-base completa -> tenant_ai_settings -> LangChain ChatPromptTemplate -> LM Studio ($OPENAI_BASE_URL) -> Meta mock"
     ;;
   openai)
-    echo "Fluxo: webhook -> BullMQ -> worker -> knowledge-base lexical -> tenant_ai_settings -> LangChain ChatPromptTemplate -> OpenAI API -> Meta mock"
+    echo "Fluxo: webhook -> BullMQ -> worker -> knowledge-base completa -> tenant_ai_settings -> LangChain ChatPromptTemplate -> OpenAI API -> Meta mock"
     ;;
 esac
 

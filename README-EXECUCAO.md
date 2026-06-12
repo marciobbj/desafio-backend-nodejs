@@ -190,25 +190,9 @@ CANDIDATE_WEBHOOK_URL=http://localhost:8000/webhook npm start
 
 ## Modos de resposta
 
-O worker pode formar a resposta por tres caminhos.
+O worker forma a resposta sempre por uma LLM. As opcoes suportadas sao LM Studio e OpenAI.
 
-### Deterministico
-
-Nao usa LLM externa. O worker recupera trechos da `knowledge-base/` por busca lexical e retorna uma resposta local.
-
-Use para validar o fluxo sem depender de credenciais:
-
-```env
-OPENAI_API_KEY=sk-proj-troque-pela-sua-chave
-OPENAI_BASE_URL=
-LLM_TOOL_CALLING_ENABLED=false
-```
-
-Smoke test:
-
-```bash
-REPLY_MODE=deterministic ./scripts/test-flows.sh
-```
+A `knowledge-base/` entra inteira como contexto do `systemPrompt`; nao ha mais fallback deterministico nem recuperacao lexical por pergunta.
 
 ### LM Studio
 
@@ -341,10 +325,9 @@ O script sobe Postgres/Redis/LocalStack via Docker por padrao, mas executa backe
 USE_DOCKER_INFRA=false ./scripts/test-flows.sh
 ```
 
-Por padrao, o script usa o fallback local deterministico para nao depender de OpenAI/LM Studio. O modo pode ser escolhido explicitamente:
+Por padrao, o script usa LM Studio e exige o servidor OpenAI-compatible ativo em `http://127.0.0.1:1234`. O modo pode ser escolhido explicitamente:
 
 ```bash
-REPLY_MODE=deterministic ./scripts/test-flows.sh
 REPLY_MODE=lmstudio ./scripts/test-flows.sh
 REPLY_MODE=openai OPENAI_API_KEY=sk-... ./scripts/test-flows.sh
 ```
@@ -356,7 +339,7 @@ Cobertura atual:
 - handshake `GET /webhook`
 - regras de idempotencia async
 - job id compativel com BullMQ
-- retrieval da knowledge base
+- carregamento da knowledge base para contexto da LLM
 - validacao do template LangChain por tenant
 
 ## Decisoes tecnicas

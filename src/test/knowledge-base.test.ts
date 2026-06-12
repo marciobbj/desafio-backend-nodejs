@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { retrieveKnowledge } from "../modules/ai/knowledge-base.js";
+import { loadKnowledgeBaseContext } from "../modules/ai/knowledge-base.js";
 
-describe("Knowledge base retrieval", () => {
-  it("returns relevant chunks for plan and price questions", async () => {
-    const chunks = await retrieveKnowledge("quais sao os planos e precos", 2);
+describe("Knowledge base context", () => {
+  it("loads the full markdown context for the LLM prompt", async () => {
+    const context = await loadKnowledgeBaseContext();
 
-    expect(chunks.length).toBeGreaterThan(0);
-    expect(chunks.join("\n")).toContain("Fibra");
+    expect(context).toContain("[");
+    expect(context).toContain("Fibra");
   });
 });
