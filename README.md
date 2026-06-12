@@ -1,195 +1,91 @@
-# Desafio Técnico — Desenvolvedor(a) Backend (Node.js)
+# Atendimento WhatsApp com IA
 
-> **Atendimento WhatsApp com IA** — um cenário real do nosso dia a dia.
+Backend Node.js + TypeScript para receber webhooks da Meta, persistir conversas, processar mensagens de forma assincrona e responder usando LLM via LangChain.
 
-Bem-vindo(a)! Este desafio simula um problema que resolvemos de verdade na Myde: receber
-mensagens de clientes pelo **WhatsApp**, processá-las com uma **LLM (OpenAI)** e responder
-automaticamente — de forma assíncrona, segura e isolada por cliente (multi-tenant).
+## Stack
 
-Não buscamos o "código mais bonito". Buscamos entender **como você pensa**: as decisões de
-arquitetura, os trade-offs que você reconhece e o que você conscientemente deixou de fora.
+- Fastify
+- PostgreSQL + Drizzle ORM
+- BullMQ + Redis
+- LangChain + OpenAI/OpenAI-compatible
+- JWT
+- Pino
+- Zod
+- Vitest
 
----
+## Requisitos
 
-## 🎯 O que você vai construir
+- Node.js 20+
+- npm
+- Docker e Docker Compose, se for usar o ambiente containerizado
+- Opcional: LM Studio ou OpenAI API key para respostas por LLM
 
-Um backend em **Node.js + TypeScript** que:
+## Variaveis de ambiente
 
-```
-   Cliente no WhatsApp
-        │  (mensagem)
-        ▼
-   Meta WhatsApp Cloud API
-        │  POST webhook (assinado)
-        ▼
- ┌─────────────────────────┐
- │   SEU BACKEND           │
- │  1. valida assinatura   │
- │  2. persiste a mensagem │
- │  3. enfileira o job ────┼──► fila (Redis/BullMQ ou SQS)
- │  4. responde 200 rápido │            │
- └─────────────────────────┘            ▼
-                                 ┌──────────────────┐
-                                 │   WORKER         │
-                                 │  - monta contexto│
-                                 │  - chama OpenAI  │
-                                 │  - envia resposta├──► Meta API (mock) ──► Cliente
-                                 └──────────────────┘
-```
-
-Para você focar no que importa, **já fornecemos** um servidor que **simula a Meta** (recebe
-seus envios e dispara webhooks assinados pra você), uma base de conhecimento e toda a infra
-local via Docker.
-
----
-
-## ✅ Requisitos
-
-### 1. Webhook da Meta
-- **Verificação (`GET /webhook`)**: responder ao handshake da Meta com o `hub.challenge`
-  quando o `hub.verify_token` bater com o seu `META_VERIFY_TOKEN`.
-- **Recebimento (`POST /webhook`)**: validar a assinatura `X-Hub-Signature-256`
-  (HMAC-SHA256 do **corpo cru** da requisição usando o `META_APP_SECRET`). Requisição com
-  assinatura inválida deve ser rejeitada.
-
-### 2. Persistência
-- Modele e persista **contatos**, **conversas** e **mensagens** (inbound e outbound).
-- Sugerimos **PostgreSQL + Drizzle ORM** (já no docker-compose), mas você pode usar outro
-  ORM/driver se justificar.
-
-### 3. Processamento assíncrono
-- **Não** chame a OpenAI dentro do handler do webhook. Responda `200` rápido e processe
-  em background.
-- Use **BullMQ + Redis** (fornecido) ou **SQS via LocalStack** (também fornecido) — sua escolha.
-
-### 4. Worker → OpenAI
-- O worker monta o contexto (histórico da conversa + `knowledge-base/`) e chama a OpenAI
-  para gerar a resposta.
-- A resposta deve se basear na base de conhecimento. Se a info não existir lá, o bot deve
-  dizer que não sabe (não inventar).
-- **Diferencial**: `function calling` para uma ação real (ex.: consultar status de um pedido
-  num endpoint mock).
-
-### 5. Envio da resposta
-- Envie a resposta via `POST http://mock-meta:8001/{phoneNumberId}/messages`
-  (mesma forma da API real da Meta). O mock loga o que recebeu.
-
-### 6. API REST mínima
-- `GET /conversations` — lista conversas (do tenant autenticado).
-- `GET /conversations/:id/messages` — mensagens de uma conversa.
-
-### 7. Aspectos transversais (é aqui que a gente repara)
-- **Idempotência**: a Meta reentrega o mesmo webhook (mesmo `message.id`). Não processe duas vezes.
-- **Multi-tenant**: cada cliente (tenant) só enxerga seus próprios dados.
-- **Resiliência**: erros na OpenAI/envio devem ter retry; o sistema não pode travar.
-- **Observabilidade**: logs estruturados que ajudem a depurar um atendimento específico.
-
----
-
-## 📦 O que já fornecemos
-
-| Item | Onde |
-|------|------|
-| Mock da Meta (dispara webhooks assinados + recebe envios) | [`mock-meta-server/`](mock-meta-server/) |
-| Base de conhecimento da empresa fictícia | [`knowledge-base/`](knowledge-base/) |
-| Infra local (Postgres, Redis, LocalStack, mock) | [`docker-compose.yml`](docker-compose.yml) |
-| Variáveis de ambiente de exemplo | [`.env.example`](.env.example) |
-| Esqueleto do projeto (package.json, tsconfig, drizzle) | raiz / [`src/`](src/) |
-| Guia para obter credenciais reais da Meta e OpenAI | [`SETUP-CREDENCIAIS.md`](SETUP-CREDENCIAIS.md) |
-
-> Você pode fazer **todo o desafio sem credenciais reais da Meta**, usando o mock. A OpenAI
-> exige uma API key (o guia explica como obter com baixíssimo custo). Se preferir, deixe a
-> chamada da LLM atrás de uma interface e forneça um "stub" — mas a integração real conta pontos.
-
----
-
-## 🚀 Como começar
+Crie o `.env` a partir do exemplo:
 
 ```bash
-# 1. Suba a infraestrutura (Postgres, Redis, LocalStack, mock da Meta)
-docker compose up -d
-
-# 2. Confira que o mock da Meta está no ar
-curl http://localhost:8001/health
-
-# 3. Copie as variáveis de ambiente e preencha sua OPENAI_API_KEY
 cp .env.example .env
-
-# 4. Instale dependências e desenvolva sua solução em src/
-npm install   # ou bun install / pnpm install
-
-# 5. Quando seu webhook estiver no ar (porta 8000), simule uma mensagem de cliente:
-curl -X POST http://localhost:8001/simulate/inbound \
-  -H "Content-Type: application/json" \
-  -d '{ "from": "5511999990000", "text": "Quais são os planos de vocês?" }'
-
-# O mock vai ASSINAR o payload e chamar seu POST http://host.docker.internal:8000/webhook
-# Seu backend processa, chama a OpenAI e envia a resposta de volta pro mock.
 ```
 
-A porta esperada do **seu** backend é a **8000**.
+Para OpenAI real:
 
----
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+LLM_TOOL_CALLING_ENABLED=true
+```
 
-## 📤 Entrega
+Para LM Studio rodando no host, usando o modelo `google/gemma-3n-e4b`:
 
-- Repositório Git (público ou com acesso) com **histórico de commits real** (não um único commit).
-- `README.md` próprio explicando: como rodar, suas decisões de arquitetura, **premissas** e
-  o que você deixaria para depois (e por quê).
-- Pelo menos **5 testes** cobrindo a lógica de negócio (validação de assinatura, idempotência,
-  serviço de conversa, etc.).
+```env
+OPENAI_API_KEY=lm-studio
+OPENAI_MODEL=google/gemma-3n-e4b
+OPENAI_BASE_URL=http://127.0.0.1:1234
+LLM_TOOL_CALLING_ENABLED=false
+```
 
----
+Se backend e worker estiverem dentro do Docker, use `host.docker.internal`:
 
-## 🧮 Critérios de avaliação
+```env
+OPENAI_API_KEY=lm-studio
+OPENAI_MODEL=google/gemma-3n-e4b
+OPENAI_BASE_URL=http://host.docker.internal:1234
+LLM_TOOL_CALLING_ENABLED=false
+```
 
-| Critério | Peso | O que olhamos |
-|----------|------|---------------|
-| Arquitetura & organização | 25% | Separação de responsabilidades, fronteiras claras, modularidade |
-| Corretude do fluxo assíncrono | 20% | Webhook responde rápido, worker processa, retry em falhas |
-| Segurança & idempotência | 20% | Assinatura validada, reentrega tratada, multi-tenant isolado |
-| Qualidade do código | 15% | Legibilidade, tipagem, tratamento de erros, naming |
-| Integração com a LLM | 10% | Contexto/RAG, respostas fiéis à base, controle de custo |
-| Testes | 10% | Cobrem cenários relevantes, não só caminho feliz |
+Se o `.env` estiver com `OPENAI_BASE_URL=http://127.0.0.1:1234`, o modelo local so sera acessivel quando backend e worker rodarem no host. Para Docker, troque para `http://host.docker.internal:1234`.
 
----
+## Rodando tudo com Docker
 
-## 📋 Regras
-
-- **Prazo**: 5 dias corridos a partir do recebimento.
-- **Linguagem**: Node.js + TypeScript.
-- Bibliotecas à sua escolha — documente o porquê das principais.
-- Pode usar IA como assistente. Mas **você precisa entender e defender cada decisão** —
-  na entrevista vamos conversar sobre o seu código.
-
-Boa sorte! 🚀
-
----
-
-## Solucao implementada
-
-Esta implementacao segue o plano descrito em [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
-
-### Stack escolhida
-
-- Fastify para HTTP.
-- PostgreSQL + Drizzle ORM para persistencia.
-- BullMQ + Redis com fila unica `inbound-messages`.
-- Particionamento logico por `tenantId` no payload dos jobs, queries e logs.
-- JWT para autenticar a API REST.
-- LangChain + OpenAI para gerar respostas, com fallback local quando `OPENAI_API_KEY` nao estiver configurada.
-- Pino para logs estruturados.
-- Vitest para testes.
-
-### Como rodar
+Instale as dependencias localmente primeiro. O compose monta o diretorio do projeto dentro dos containers, incluindo `node_modules`.
 
 ```bash
 npm install
 cp .env.example .env
-docker compose up -d
+docker compose up -d --build
 ```
 
-Simule uma mensagem:
+O compose sobe:
+
+- Postgres em `localhost:5432`
+- Redis em `localhost:6379`
+- backend em `localhost:8000`
+- worker
+- mock da Meta em `localhost:8001`
+- LocalStack em `localhost:4566`
+
+O backend executa `npm run db:migrate` no boot.
+
+Verifique os servicos:
+
+```bash
+docker compose ps
+curl http://localhost:8000/health
+curl http://localhost:8001/health
+```
+
+Simule uma mensagem inbound:
 
 ```bash
 curl -X POST http://localhost:8001/simulate/inbound \
@@ -203,18 +99,142 @@ Veja as mensagens enviadas ao mock:
 curl http://localhost:8001/sent
 ```
 
-Por padrao, o `docker-compose.yml` sobe Postgres, Redis, backend, worker e mock-meta. O mock entrega webhooks em `http://backend:8000/webhook`, dentro da rede Docker.
+Logs:
 
-Se preferir rodar o backend no host com `npm run dev`, sobrescreva a URL do mock antes de recriar o container:
+```bash
+docker compose logs -f backend
+docker compose logs -f worker
+docker compose logs -f mock-meta
+```
+
+Parar o ambiente:
+
+```bash
+docker compose down
+```
+
+Para apagar tambem o volume do Postgres:
+
+```bash
+docker compose down -v
+```
+
+## Rodando app no host com infra em Docker
+
+Este modo e o mais pratico para desenvolver e para testar LM Studio em `http://127.0.0.1:1234`.
+
+Suba apenas a infraestrutura:
+
+```bash
+npm install
+cp .env.example .env
+docker compose up -d postgres redis mock-meta
+```
+
+Nesse modo, o mock precisa entregar webhooks para o backend no host:
 
 ```bash
 CANDIDATE_WEBHOOK_URL=http://host.docker.internal:8000/webhook docker compose up -d --force-recreate mock-meta
+```
+
+Em seguida, aplique migrations e rode backend e worker no host:
+
+```bash
 npm run db:migrate
 npm run dev
+```
+
+Em outro terminal:
+
+```bash
 npm run worker
 ```
 
-### API REST
+Simule uma mensagem:
+
+```bash
+curl -X POST http://localhost:8001/simulate/inbound \
+  -H "Content-Type: application/json" \
+  -d '{ "from": "5511999990000", "text": "Quais sao os planos de voces?" }'
+```
+
+## Rodando sem Docker
+
+Use este modo se voce ja tem Postgres e Redis instalados localmente.
+
+Crie um banco Postgres:
+
+```bash
+createdb atendimento
+```
+
+Configure o `.env`:
+
+```env
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/atendimento
+REDIS_URL=redis://localhost:6379
+META_API_BASE_URL=http://localhost:8001
+```
+
+Instale dependencias e aplique migrations:
+
+```bash
+npm install
+npm run db:migrate
+```
+
+Inicie Redis e Postgres pelos seus servicos locais. Depois rode a aplicacao:
+
+```bash
+npm run dev
+```
+
+Em outro terminal:
+
+```bash
+npm run worker
+```
+
+O mock da Meta tambem precisa estar rodando. A forma mais simples e manter apenas o mock via Docker:
+
+```bash
+CANDIDATE_WEBHOOK_URL=http://host.docker.internal:8000/webhook docker compose up -d mock-meta
+```
+
+Se quiser realmente evitar Docker tambem para o mock, rode o servidor diretamente:
+
+```bash
+cd mock-meta-server
+CANDIDATE_WEBHOOK_URL=http://localhost:8000/webhook npm start
+```
+
+## LM Studio
+
+No LM Studio:
+
+1. Carregue o modelo `google/gemma-3n-e4b`.
+2. Inicie o servidor OpenAI-compatible na porta `1234`.
+3. Configure o `.env`.
+
+App no host:
+
+```env
+OPENAI_BASE_URL=http://127.0.0.1:1234
+```
+
+App no Docker:
+
+```env
+OPENAI_BASE_URL=http://host.docker.internal:1234
+```
+
+Para modelos locais, mantenha:
+
+```env
+LLM_TOOL_CALLING_ENABLED=false
+```
+
+## API REST
 
 Gere um token de desenvolvimento:
 
@@ -222,7 +242,7 @@ Gere um token de desenvolvimento:
 npm run token:dev
 ```
 
-Use o token nos endpoints:
+Use o token:
 
 ```bash
 curl http://localhost:8000/conversations \
@@ -232,34 +252,59 @@ curl http://localhost:8000/conversations/<CONVERSATION_ID>/messages \
   -H "Authorization: Bearer <TOKEN>"
 ```
 
-### Decisoes importantes
-
-- O webhook valida `X-Hub-Signature-256` usando o corpo cru da requisicao.
-- O handler do webhook nao chama OpenAI; ele persiste, enfileira e responde rapido.
-- A idempotencia principal fica no banco com indice unico parcial em `(tenant_id, wa_message_id)`.
-- A API REST nunca aceita `tenantId` do cliente; o tenant vem do JWT.
-- O worker aplica lock em memoria por conversa para reduzir risco de respostas concorrentes no mesmo atendimento.
-- A base de conhecimento e recuperada por busca lexical simples. Para esta base pequena, isso e mais previsivel que introduzir vector store externo.
-- O tool calling implementado consulta status de protocolo `PED-XXXX`.
-
-### Testes
+Configuracao de IA por tenant:
 
 ```bash
-npm test
+curl http://localhost:8000/tenant/ai-settings \
+  -H "Authorization: Bearer <TOKEN>"
+```
+
+Atualize o prompt, modelo, temperatura ou tool calling:
+
+```bash
+curl -X PATCH http://localhost:8000/tenant/ai-settings \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "systemPrompt": "Voce atende a {tenantName}. Use apenas este contexto:\n{context}",
+    "model": "google/gemma-3n-e4b",
+    "temperature": 0.1,
+    "toolCallingEnabled": false
+  }'
+```
+
+Variaveis suportadas no prompt:
+
+- `{tenantName}`
+- `{context}`
+
+## Testes e qualidade
+
+```bash
 npm run typecheck
+npm test
 ```
 
 Cobertura atual:
 
-- assinatura valida e invalida do webhook
-- parsing de payload inbound da Meta
+- assinatura do webhook
+- parsing de payload da Meta
 - handshake `GET /webhook`
+- regras de idempotencia async
+- job id compativel com BullMQ
 - retrieval da knowledge base
+- validacao do template LangChain por tenant
 
-### Premissas e proximos passos
+## Decisoes tecnicas
 
-- O tenant padrao e criado automaticamente no boot com `DEFAULT_TENANT_ID`.
-- Se voce ja copiou o `.env`, use `DEFAULT_TENANT_ID=00000000-0000-4000-8000-000000000001`.
-- Nao ha fluxo completo de login; tokens JWT de desenvolvimento sao gerados via script.
-- O lock por conversa e em memoria, suficiente para um worker local. Em producao com multiplas replicas, eu moveria isso para Redis ou advisory lock no Postgres.
-- Embeddings persistidos e DLQ dedicada ficaram fora do escopo para manter a entrega objetiva.
+As decisoes e trade-offs atuais estao em [DECISIONS.md](DECISIONS.md).
+
+Resumo:
+
+- webhook responde rapido e nao chama LLM
+- processamento async por BullMQ/Redis
+- fila unica com particionamento logico por tenant
+- idempotencia no banco e no job id
+- prompt de sistema configuravel por tenant em `tenant_ai_settings`
+- LangChain com `ChatPromptTemplate` e `MessagesPlaceholder`
+- API REST autenticada por JWT

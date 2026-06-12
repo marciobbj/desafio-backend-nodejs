@@ -54,6 +54,8 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-proj-troque-pela-sua-chave}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
@@ -83,6 +85,8 @@ services:
     command: npm run worker
     volumes:
       - .:/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-proj-troque-pela-sua-chave}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
