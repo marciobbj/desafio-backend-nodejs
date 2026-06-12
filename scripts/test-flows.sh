@@ -9,20 +9,51 @@ BACKEND_URL="${BACKEND_URL:-http://localhost:8000}"
 MOCK_URL="${MOCK_URL:-http://localhost:8001}"
 PHONE="${SMOKE_PHONE:-5511999990000}"
 MESSAGE_ID="${SMOKE_MESSAGE_ID:-wamid.smoke.$(date +%s)}"
-USE_CONFIGURED_LLM="${USE_CONFIGURED_LLM:-false}"
+REPLY_MODE="${REPLY_MODE:-deterministic}"
+LMSTUDIO_MODEL="${LMSTUDIO_MODEL:-google/gemma-3n-e4b}"
+OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
 
-if [[ "$USE_CONFIGURED_LLM" == "true" ]]; then
-  echo "[config] usando configuracao LLM do ambiente/.env"
-  if [[ "${OPENAI_BASE_URL:-}" == "http://127.0.0.1:1234" ]]; then
-    export OPENAI_BASE_URL="http://host.docker.internal:1234"
-    echo "[config] OPENAI_BASE_URL ajustado para Docker: $OPENAI_BASE_URL"
-  fi
-else
-  export OPENAI_API_KEY="sk-proj-troque-pela-sua-chave"
-  export OPENAI_BASE_URL=""
-  export LLM_TOOL_CALLING_ENABLED="false"
-  echo "[config] usando fallback local deterministico; defina USE_CONFIGURED_LLM=true para testar OpenAI/LM Studio"
-fi
+case "$REPLY_MODE" in
+  deterministic)
+    export OPENAI_API_KEY="sk-proj-troque-pela-sua-chave"
+    export OPENAI_BASE_URL=""
+    export LLM_TOOL_CALLING_ENABLED="false"
+    REPLY_PATH="deterministico"
+    REPLY_DESCRIPTION="Sem LLM configurada: worker usa retrieveKnowledge() e generateLocalReply() para responder a partir da knowledge-base."
+    ;;
+  lmstudio)
+    export OPENAI_API_KEY="${OPENAI_API_KEY:-lm-studio}"
+    export OPENAI_MODEL="$LMSTUDIO_MODEL"
+    export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://host.docker.internal:1234}"
+    if [[ "$OPENAI_BASE_URL" == "http://127.0.0.1:1234" || "$OPENAI_BASE_URL" == "http://localhost:1234" ]]; then
+      export OPENAI_BASE_URL="http://host.docker.internal:1234"
+    fi
+    export LLM_TOOL_CALLING_ENABLED="${LLM_TOOL_CALLING_ENABLED:-false}"
+    REPLY_PATH="lmstudio"
+    REPLY_DESCRIPTION="LLM local OpenAI-compatible: worker monta ChatPromptTemplate, chama ChatOpenAI apontando para LM Studio e usa modelo $OPENAI_MODEL."
+    ;;
+  openai)
+    if [[ -z "${OPENAI_API_KEY:-}" || "$OPENAI_API_KEY" == "sk-proj-troque-pela-sua-chave" ]]; then
+      echo "REPLY_MODE=openai exige OPENAI_API_KEY real no ambiente." >&2
+      exit 1
+    fi
+    export OPENAI_BASE_URL="${OPENAI_BASE_URL:-}"
+    export OPENAI_MODEL
+    export LLM_TOOL_CALLING_ENABLED="${LLM_TOOL_CALLING_ENABLED:-true}"
+    REPLY_PATH="openai"
+    REPLY_DESCRIPTION="OpenAI externa: worker monta ChatPromptTemplate, chama ChatOpenAI na API OpenAI e pode usar tool calling conforme LLM_TOOL_CALLING_ENABLED."
+    ;;
+  *)
+    echo "REPLY_MODE invalido: $REPLY_MODE. Use deterministic, lmstudio ou openai." >&2
+    exit 1
+    ;;
+esac
+
+echo "[resposta] modo: $REPLY_PATH"
+echo "[resposta] caminho: $REPLY_DESCRIPTION"
+echo "[resposta] OPENAI_MODEL=${OPENAI_MODEL:-nao-aplicavel}"
+echo "[resposta] OPENAI_BASE_URL=${OPENAI_BASE_URL:-openai-default-ou-vazio}"
+echo "[resposta] LLM_TOOL_CALLING_ENABLED=${LLM_TOOL_CALLING_ENABLED:-nao-definido}"
 
 section() {
   printf "\n==> %s\n" "$1"
@@ -106,6 +137,21 @@ wait_http "$MOCK_URL/health" "mock-meta"
 
 print_json "Health backend" "$BACKEND_URL/health"
 print_json "Health mock-meta" "$MOCK_URL/health"
+
+section "Caminho de geracao da resposta"
+echo "Modo selecionado: $REPLY_PATH"
+echo "$REPLY_DESCRIPTION"
+case "$REPLY_MODE" in
+  deterministic)
+    echo "Fluxo: webhook -> BullMQ -> worker -> knowledge-base lexical -> generateLocalReply -> Meta mock"
+    ;;
+  lmstudio)
+    echo "Fluxo: webhook -> BullMQ -> worker -> knowledge-base lexical -> tenant_ai_settings -> LangChain ChatPromptTemplate -> LM Studio ($OPENAI_BASE_URL) -> Meta mock"
+    ;;
+  openai)
+    echo "Fluxo: webhook -> BullMQ -> worker -> knowledge-base lexical -> tenant_ai_settings -> LangChain ChatPromptTemplate -> OpenAI API -> Meta mock"
+    ;;
+esac
 
 section "Garantindo dependencias compativeis dentro do container backend"
 $COMPOSE exec -T backend npm install

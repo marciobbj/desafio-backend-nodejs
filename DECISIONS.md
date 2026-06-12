@@ -135,6 +135,20 @@ Para LM Studio no host:
 - Rodando backend/worker no Docker: use `OPENAI_BASE_URL=http://host.docker.internal:1234`.
 - Para modelos locais que nao suportam tool calling de forma compativel, use `LLM_TOOL_CALLING_ENABLED=false`.
 
+Esta opcao foi adicionada por necessidade pratica durante a implementacao: testar o fluxo real de LLM sem depender de uma chave externa da OpenAI. A decisao foi manter a integracao passando pelo mesmo `ChatOpenAI` do LangChain, alterando apenas `OPENAI_BASE_URL`, em vez de criar um provider paralelo para modelo local.
+
+Com isso existem tres caminhos suportados para formar a resposta:
+
+- **Deterministico**: sem LLM configurada; o worker usa a knowledge base local por busca lexical e retorna `generateLocalReply`.
+- **LM Studio**: LLM local via endpoint OpenAI-compatible; o worker usa LangChain, `ChatPromptTemplate`, `tenant_ai_settings` e `ChatOpenAI` apontando para `OPENAI_BASE_URL`.
+- **OpenAI**: API externa da OpenAI; o worker usa o mesmo fluxo LangChain e pode habilitar tool calling quando suportado.
+
+Trade-offs:
+
+- O modo deterministico e previsivel e bom para smoke tests, mas nao exercita geracao real.
+- O LM Studio exercita o caminho LangChain/LLM sem custo externo, mas depende da capacidade e compatibilidade do modelo local.
+- A OpenAI externa e o alvo principal de producao, mas exige credencial e pode gerar custo.
+
 ## API REST
 
 Endpoints atuais:

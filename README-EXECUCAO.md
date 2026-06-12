@@ -25,6 +25,8 @@ OPENAI_MODEL=gpt-4o-mini
 LLM_TOOL_CALLING_ENABLED=true
 ```
 
+Os detalhes de cada caminho de resposta estao em [Modos de resposta](#modos-de-resposta).
+
 Para LM Studio rodando no host, usando o modelo `google/gemma-3n-e4b`:
 
 ```env
@@ -197,11 +199,35 @@ cd mock-meta-server
 CANDIDATE_WEBHOOK_URL=http://localhost:8000/webhook npm start
 ```
 
-## LM Studio
+## Modos de resposta
+
+O worker pode formar a resposta por tres caminhos.
+
+### Deterministico
+
+Nao usa LLM externa. O worker recupera trechos da `knowledge-base/` por busca lexical e retorna uma resposta local.
+
+Use para validar o fluxo sem depender de credenciais:
+
+```env
+OPENAI_API_KEY=sk-proj-troque-pela-sua-chave
+OPENAI_BASE_URL=
+LLM_TOOL_CALLING_ENABLED=false
+```
+
+Smoke test:
+
+```bash
+REPLY_MODE=deterministic ./scripts/test-flows.sh
+```
+
+### LM Studio
+
+Usa um modelo local com endpoint OpenAI-compatible. Este modo foi incluido para testar a integracao LLM sem depender de uma chave externa da OpenAI.
 
 No LM Studio:
 
-1. Carregue o modelo `google/gemma-3n-e4b`.
+1. Carregue o modelo `google/gemma-3n-e4b`. (ou qualquer outro que deseje testar)
 2. Inicie o servidor OpenAI-compatible na porta `1234`.
 3. Configure o `.env`.
 
@@ -221,6 +247,41 @@ Para modelos locais, mantenha:
 
 ```env
 LLM_TOOL_CALLING_ENABLED=false
+```
+
+Smoke test:
+
+```bash
+REPLY_MODE=lmstudio ./scripts/test-flows.sh
+```
+
+Se quiser usar outro modelo local:
+
+```bash
+REPLY_MODE=lmstudio LMSTUDIO_MODEL=nome/do-modelo ./scripts/test-flows.sh
+```
+
+### OpenAI
+
+Usa a API externa da OpenAI via LangChain.
+
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_BASE_URL=
+LLM_TOOL_CALLING_ENABLED=true
+```
+
+Smoke test:
+
+```bash
+REPLY_MODE=openai OPENAI_API_KEY=sk-... ./scripts/test-flows.sh
+```
+
+Se quiser desabilitar tool calling:
+
+```bash
+REPLY_MODE=openai OPENAI_API_KEY=sk-... LLM_TOOL_CALLING_ENABLED=false ./scripts/test-flows.sh
 ```
 
 ## API REST
@@ -280,10 +341,12 @@ Smoke test completo com Docker:
 ./scripts/test-flows.sh
 ```
 
-Por padrao, o script usa o fallback local deterministico para nao depender de OpenAI/LM Studio. Para testar com a configuracao LLM do `.env`:
+Por padrao, o script usa o fallback local deterministico para nao depender de OpenAI/LM Studio. O modo pode ser escolhido explicitamente:
 
 ```bash
-USE_CONFIGURED_LLM=true ./scripts/test-flows.sh
+REPLY_MODE=deterministic ./scripts/test-flows.sh
+REPLY_MODE=lmstudio ./scripts/test-flows.sh
+REPLY_MODE=openai OPENAI_API_KEY=sk-... ./scripts/test-flows.sh
 ```
 
 Cobertura atual:
