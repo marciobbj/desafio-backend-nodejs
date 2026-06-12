@@ -1,6 +1,8 @@
 import { relations, sql } from "drizzle-orm";
 import {
   index,
+  boolean,
+  doublePrecision,
   jsonb,
   pgTable,
   text,
@@ -36,6 +38,18 @@ export const tenantChannels = pgTable(
     ),
   }),
 );
+
+export const tenantAiSettings = pgTable("tenant_ai_settings", {
+  tenantId: uuid("tenant_id")
+    .primaryKey()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  systemPrompt: text("system_prompt").notNull(),
+  model: text("model"),
+  temperature: doublePrecision("temperature"),
+  toolCallingEnabled: boolean("tool_calling_enabled"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
 
 export const contacts = pgTable(
   "contacts",
@@ -133,11 +147,22 @@ export const webhookEvents = pgTable(
   }),
 );
 
-export const tenantsRelations = relations(tenants, ({ many }) => ({
+export const tenantsRelations = relations(tenants, ({ many, one }) => ({
   channels: many(tenantChannels),
   contacts: many(contacts),
   conversations: many(conversations),
   messages: many(messages),
+  aiSettings: one(tenantAiSettings, {
+    fields: [tenants.id],
+    references: [tenantAiSettings.tenantId],
+  }),
+}));
+
+export const tenantAiSettingsRelations = relations(tenantAiSettings, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tenantAiSettings.tenantId],
+    references: [tenants.id],
+  }),
 }));
 
 export const tenantChannelsRelations = relations(tenantChannels, ({ one }) => ({

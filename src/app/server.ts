@@ -6,6 +6,7 @@ import { config } from "../lib/config.js";
 import { logger } from "../lib/logger.js";
 import { ensureDefaultTenant } from "../modules/tenants/tenant-service.js";
 import { registerConversationRoutes } from "./routes/conversation-routes.js";
+import { registerTenantAiSettingsRoutes } from "./routes/tenant-ai-settings-routes.js";
 import { registerWebhookRoutes } from "./routes/webhook-routes.js";
 
 export async function buildServer() {
@@ -49,6 +50,7 @@ export async function buildServer() {
 
   await registerWebhookRoutes(app);
   await registerConversationRoutes(app);
+  await registerTenantAiSettingsRoutes(app);
 
   return app;
 }

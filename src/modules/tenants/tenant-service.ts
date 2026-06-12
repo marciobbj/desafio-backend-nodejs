@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { DbClient } from "../../db/client.js";
 import { tenantChannels, tenants } from "../../db/schema.js";
 import { config } from "../../lib/config.js";
+import { ensureDefaultTenantAiSettings } from "../ai/tenant-ai-settings.js";
 
 export async function ensureDefaultTenant(db: DbClient) {
   const existing = await db.query.tenantChannels.findFirst({
@@ -12,6 +13,7 @@ export async function ensureDefaultTenant(db: DbClient) {
   });
 
   if (existing) {
+    await ensureDefaultTenantAiSettings(db, existing.tenantId);
     return existing.tenant;
   }
 
@@ -37,6 +39,8 @@ export async function ensureDefaultTenant(db: DbClient) {
     wabaId: "WABA_TESTE_0001",
     verifyToken: config.META_VERIFY_TOKEN,
   });
+
+  await ensureDefaultTenantAiSettings(db, tenant.id);
 
   return tenant;
 }

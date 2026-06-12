@@ -15,6 +15,13 @@
       "when": 1781218571619,
       "tag": "0001_smiling_tombstone",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781219687358,
+      "tag": "0002_short_the_call",
+      "breakpoints": true
     }
   ]
 }

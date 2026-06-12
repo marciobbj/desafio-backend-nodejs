@@ -1,11 +1,14 @@
-import { AIMessage, HumanMessage, SystemMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages";
+import { ChatPromptTemplate, MessagesPlaceholder } from "@langchain/core/prompts";
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
+import { db } from "../../db/client.js";
 import type { Message } from "../../db/schema.js";
 import { config } from "../../lib/config.js";
 import { logger } from "../../lib/logger.js";
 import { retrieveKnowledge } from "./knowledge-base.js";
 import { consultarStatusPedido } from "./order-status-tool.js";
+import { getTenantAiSettings } from "./tenant-ai-settings.js";
 
 export type GenerateReplyInput = {
   tenantId: string;
@@ -55,19 +58,6 @@ function toLangChainHistory(history: Message[]) {
   });
 }
 
-function buildSystemPrompt(context: string) {
-  return [
-    "Voce e um atendente da NeoFibra no WhatsApp.",
-    "Responda em portugues brasileiro, de forma objetiva e cordial.",
-    "Use apenas as informacoes da base de conhecimento e das ferramentas disponiveis.",
-    "Se a informacao nao estiver disponivel, diga que nao sabe e indique atendimento humano.",
-    "Nao invente precos, prazos, cobertura, SLA ou status.",
-    "",
-    "Base de conhecimento relevante:",
-    context || "Nenhum trecho relevante foi encontrado.",
-  ].join("\n");
-}
-
 function isPlaceholderApiKey(apiKey: string | undefined) {
   return !apiKey || apiKey.includes("troque-pela-sua-chave");
 }
@@ -98,6 +88,8 @@ async function generateLocalReply(question: string) {
 }
 
 export async function generateReply(input: GenerateReplyInput) {
+  const aiSettings = await getTenantAiSettings(db, input.tenantId);
+
   if (!hasConfiguredLlm()) {
     logger.info(
       { tenantId: input.tenantId, conversationId: input.conversationId },
@@ -107,15 +99,20 @@ export async function generateReply(input: GenerateReplyInput) {
   }
 
   const context = (await retrieveKnowledge(input.question)).join("\n\n---\n\n");
-  const messages: BaseMessage[] = [
-    new SystemMessage(buildSystemPrompt(context)),
-    ...toLangChainHistory(input.history),
-  ];
+  const prompt = ChatPromptTemplate.fromMessages([
+    ["system", aiSettings.systemPrompt],
+    new MessagesPlaceholder("history"),
+  ]);
+  const messages = await prompt.formatMessages({
+    tenantName: aiSettings.tenantName,
+    context: context || "Nenhum trecho relevante foi encontrado.",
+    history: toLangChainHistory(input.history),
+  });
 
   const model = new ChatOpenAI({
     apiKey: isPlaceholderApiKey(config.OPENAI_API_KEY) ? "lm-studio" : config.OPENAI_API_KEY,
-    model: config.OPENAI_MODEL,
-    temperature: 0.1,
+    model: aiSettings.model ?? config.OPENAI_MODEL,
+    temperature: aiSettings.temperature ?? 0.1,
     maxRetries: 2,
     configuration: config.OPENAI_BASE_URL
       ? {
@@ -128,14 +125,14 @@ export async function generateReply(input: GenerateReplyInput) {
     {
       tenantId: input.tenantId,
       conversationId: input.conversationId,
-      model: config.OPENAI_MODEL,
+      model: aiSettings.model ?? config.OPENAI_MODEL,
       baseURL: config.OPENAI_BASE_URL,
-      toolCallingEnabled: config.LLM_TOOL_CALLING_ENABLED,
+      toolCallingEnabled: aiSettings.toolCallingEnabled ?? config.LLM_TOOL_CALLING_ENABLED,
     },
     "Generating reply with LangChain chat model",
   );
 
-  if (!config.LLM_TOOL_CALLING_ENABLED) {
+  if (!(aiSettings.toolCallingEnabled ?? config.LLM_TOOL_CALLING_ENABLED)) {
     const response = await model.invoke(messages);
     return (
       messageContentToString(response.content) ||
