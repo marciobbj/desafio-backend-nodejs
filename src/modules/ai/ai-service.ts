@@ -6,7 +6,7 @@ import { db } from "../../db/client.js";
 import type { Message } from "../../db/schema.js";
 import { config } from "../../lib/config.js";
 import { logger } from "../../lib/logger.js";
-import { loadKnowledgeBaseContext } from "./knowledge-base.js";
+import { searchKnowledgeBase } from "./knowledge-base.js";
 import { consultarStatusPedido } from "./order-status-tool.js";
 import { getTenantAiSettings } from "./tenant-ai-settings.js";
 
@@ -73,6 +73,10 @@ function toLangChainHistory(history: Message[]) {
     }
   }
 
+  if (merged[0] instanceof AIMessage) {
+    merged.shift();
+  }
+
   return merged;
 }
 
@@ -108,7 +112,7 @@ export async function generateReply(input: GenerateReplyInput) {
     throw new Error("LLM provider is not configured. Set OPENAI_BASE_URL for LM Studio or OPENAI_API_KEY for OpenAI.");
   }
 
-  const context = await loadKnowledgeBaseContext();
+  const context = await searchKnowledgeBase(db, input.tenantId, input.question);
   const prompt = ChatPromptTemplate.fromMessages([
     ["system", aiSettings.systemPrompt],
     new MessagesPlaceholder("history"),

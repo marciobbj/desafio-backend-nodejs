@@ -186,12 +186,13 @@ Drizzle migrations atuais:
 - `0001_smiling_tombstone.sql`
 - `0002_short_the_call.sql`
 
-## Knowledge base
+## Knowledge base (RAG com pgvector e Drizzle)
 
-- A base em `knowledge-base/` e carregada inteira como contexto do `systemPrompt`.
-- Nao ha mais recuperacao lexical por pergunta nem resposta local sem LLM.
-- Para a base pequena do desafio, carregar o contexto completo reduz complexidade e evita um RAG lexical fraco.
-- Uma evolucao natural, se a base crescer, seria persistir embeddings por tenant e usar vector search.
+- **Busca Semântica:** A base em `knowledge-base/` agora é dividida em chunks e convertida em embeddings (vetores de 1536 dimensões) gerados via `OpenAIEmbeddings`.
+- **Drizzle Nativo + pgvector:** Optamos por usar o suporte nativo a vetores do Drizzle ORM (`vector("embedding", { dimensions: 1536 })` no schema e `cosineDistance` nas queries), mantendo uma única pool de conexões com o banco (`postgres-js`) e preservando a integridade das migrations.
+- **Multi-tenancy:** Cada chunk de documento é associado explicitamente a um `tenant_id` com chave estrangeira para a tabela `tenants`, garantindo isolamento estrito dos dados na busca vetorial.
+- **Ingestão Dinâmica no Startup:** Os embeddings do tenant padrão são pré-populados no boot do servidor (`prepareRuntimeData`).
+- **Mecanismo de Fallback Resiliente:** Se a geração de embeddings falhar (por exemplo, no desenvolvimento local usando LM Studio offline sem suporte a embeddings), o sistema captura a exceção, registra um log de aviso e reverte automaticamente para o carregamento estático completo da base para alimentar o prompt, mantendo o sistema em funcionamento sem erros fatais.
 
 ## Tool calling
 

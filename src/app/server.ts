@@ -5,6 +5,7 @@ import { db } from "../db/client.js";
 import { config } from "../lib/config.js";
 import { logger } from "../lib/logger.js";
 import { ensureDefaultTenant } from "../modules/tenants/tenant-service.js";
+import { ensureEmbeddingsPopulated } from "../modules/ai/knowledge-base.js";
 import { registerConversationRoutes } from "./routes/conversation-routes.js";
 import { registerTenantAiSettingsRoutes } from "./routes/tenant-ai-settings-routes.js";
 import { registerWebhookRoutes } from "./routes/webhook-routes.js";
@@ -57,4 +58,12 @@ export async function buildServer() {
 
 export async function prepareRuntimeData() {
   await ensureDefaultTenant(db);
+  try {
+    await ensureEmbeddingsPopulated(db, config.DEFAULT_TENANT_ID);
+  } catch (err) {
+    logger.warn(
+      { err },
+      "Failed to pre-populate default tenant embeddings at startup (will retry on-demand)",
+    );
+  }
 }

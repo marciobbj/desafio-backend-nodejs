@@ -192,7 +192,7 @@ CANDIDATE_WEBHOOK_URL=http://localhost:8000/webhook npm start
 
 O worker forma a resposta sempre por uma LLM. As opcoes suportadas sao LM Studio e OpenAI.
 
-A `knowledge-base/` entra inteira como contexto do `systemPrompt`
+A `knowledge-base/` é dividida em chunks e armazenada no PostgreSQL usando `pgvector`. O worker realiza busca semântica por similaridade (filtrando pelo `tenantId` da conversa) para extrair os trechos mais relevantes e injetar como `{context}` no prompt. Caso ocorra erro ao gerar embeddings (como LM Studio local sem modelo de embeddings carregado), o sistema possui um fallback automático que carrega a base inteira em memória.
 
 ### LM Studio
 

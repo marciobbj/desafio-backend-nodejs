@@ -10,6 +10,7 @@ import {
   unique,
   uniqueIndex,
   uuid,
+  vector,
 } from "drizzle-orm/pg-core";
 
 export const tenants = pgTable("tenants", {
@@ -149,14 +150,39 @@ export const webhookEvents = pgTable(
   }),
 );
 
+export const knowledgeBaseEmbeddings = pgTable(
+  "knowledge_base_embeddings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    source: text("source").notNull(),
+    content: text("content").notNull(),
+    embedding: vector("embedding", { dimensions: 1536 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    tenantIdx: index("kb_embeddings_tenant_idx").on(table.tenantId),
+  }),
+);
+
 export const tenantsRelations = relations(tenants, ({ many, one }) => ({
   channels: many(tenantChannels),
   contacts: many(contacts),
   conversations: many(conversations),
   messages: many(messages),
+  knowledgeBaseEmbeddings: many(knowledgeBaseEmbeddings),
   aiSettings: one(tenantAiSettings, {
     fields: [tenants.id],
     references: [tenantAiSettings.tenantId],
+  }),
+}));
+
+export const knowledgeBaseEmbeddingsRelations = relations(knowledgeBaseEmbeddings, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [knowledgeBaseEmbeddings.tenantId],
+    references: [tenants.id],
   }),
 }));
 
