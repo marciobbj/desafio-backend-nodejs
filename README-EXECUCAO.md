@@ -256,6 +256,14 @@ Smoke test:
 REPLY_MODE=openai OPENAI_API_KEY=sk-... ./scripts/test-flows.sh
 ```
 
+Tambem funciona deixando a chave no `.env`; o modo ainda deve ser informado explicitamente:
+
+```bash
+REPLY_MODE=openai ./scripts/test-flows.sh
+```
+
+No modo `openai`, o script limpa `OPENAI_BASE_URL` por padrao para usar a API oficial da OpenAI. Se voce precisar testar outro endpoint OpenAI-compatible, use `REPLY_MODE=lmstudio` ou defina explicitamente `OPENAI_BASE_URL_OVERRIDE`.
+
 Se quiser desabilitar tool calling:
 
 ```bash
@@ -325,12 +333,16 @@ O script sobe Postgres/Redis/LocalStack via Docker por padrao, mas executa backe
 USE_DOCKER_INFRA=false ./scripts/test-flows.sh
 ```
 
-Por padrao, o script usa LM Studio e exige o servidor OpenAI-compatible ativo em `http://127.0.0.1:1234`. O modo pode ser escolhido explicitamente:
+O modo de resposta do smoke test deve ser escolhido explicitamente:
 
 ```bash
 REPLY_MODE=lmstudio ./scripts/test-flows.sh
 REPLY_MODE=openai OPENAI_API_KEY=sk-... ./scripts/test-flows.sh
 ```
+
+Use `REPLY_MODE=lmstudio` quando quiser testar um servidor local OpenAI-compatible, como LM Studio em `http://127.0.0.1:1234`.
+
+Use `REPLY_MODE=openai` quando quiser testar a API oficial da OpenAI. A chave pode ser passada inline ou estar no `.env`.
 
 Cobertura atual:
 

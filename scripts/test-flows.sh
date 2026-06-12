@@ -13,14 +13,66 @@ WORKER_LOG="${WORKER_LOG:-/tmp/desafio-backend-smoke-worker.log}"
 MOCK_LOG="${MOCK_LOG:-/tmp/desafio-backend-smoke-mock.log}"
 PHONE="${SMOKE_PHONE:-5511999990000}"
 MESSAGE_ID="${SMOKE_MESSAGE_ID:-wamid.smoke.$(date +%s)}"
-REPLY_MODE="${REPLY_MODE:-lmstudio}"
+REPLY_MODE="${REPLY_MODE:-}"
 LMSTUDIO_MODEL="${LMSTUDIO_MODEL:-google/gemma-3n-e4b}"
-OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
-LLM_REQUEST_TIMEOUT_MS="${LLM_REQUEST_TIMEOUT_MS:-600000}"
+
+read_dotenv_value() {
+  local name="$1"
+  local line
+
+  if [[ ! -f .env ]]; then
+    return 1
+  fi
+
+  line="$(grep -E "^[[:space:]]*${name}=" .env | tail -n 1 || true)"
+  if [[ -z "$line" ]]; then
+    return 1
+  fi
+
+  local value="${line#*=}"
+  value="${value%$'\r'}"
+  if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+    value="${value:1:${#value}-2}"
+  elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+
+  printf "%s" "$value"
+}
+
+export_env_if_unset() {
+  local name="$1"
+  local value
+
+  if [[ -n "${!name:-}" ]]; then
+    return 0
+  fi
+
+  value="$(read_dotenv_value "$name" || true)"
+  if [[ -n "$value" ]]; then
+    export "$name=$value"
+  fi
+}
+
+is_placeholder_openai_key() {
+  [[ -z "${1:-}" || "$1" == "sk-proj-troque-pela-sua-chave" ]]
+}
+
+if [[ ! -f .env ]]; then
+  echo "Criando .env a partir de .env.example"
+  cp .env.example .env
+fi
+
+for env_name in OPENAI_API_KEY OPENAI_MODEL OPENAI_BASE_URL LLM_TOOL_CALLING_ENABLED LLM_REQUEST_TIMEOUT_MS; do
+  export_env_if_unset "$env_name"
+done
+
+export OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
+export LLM_REQUEST_TIMEOUT_MS="${LLM_REQUEST_TIMEOUT_MS:-600000}"
 
 case "$REPLY_MODE" in
   lmstudio)
-    export OPENAI_API_KEY="${OPENAI_API_KEY:-lm-studio}"
+    export OPENAI_API_KEY="${LMSTUDIO_API_KEY:-lm-studio}"
     export OPENAI_MODEL="$LMSTUDIO_MODEL"
     export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://127.0.0.1:1234}"
     export LLM_TOOL_CALLING_ENABLED="${LLM_TOOL_CALLING_ENABLED:-false}"
@@ -30,11 +82,11 @@ case "$REPLY_MODE" in
     REPLY_DESCRIPTION="LLM local OpenAI-compatible: worker monta ChatPromptTemplate, chama ChatOpenAI apontando para LM Studio e usa modelo $OPENAI_MODEL."
     ;;
   openai)
-    if [[ -z "${OPENAI_API_KEY:-}" || "$OPENAI_API_KEY" == "sk-proj-troque-pela-sua-chave" ]]; then
-      echo "REPLY_MODE=openai exige OPENAI_API_KEY real no ambiente." >&2
+    if is_placeholder_openai_key "${OPENAI_API_KEY:-}"; then
+      echo "REPLY_MODE=openai exige OPENAI_API_KEY real no ambiente ou no .env." >&2
       exit 1
     fi
-    export OPENAI_BASE_URL="${OPENAI_BASE_URL:-}"
+    export OPENAI_BASE_URL="${OPENAI_BASE_URL_OVERRIDE:-}"
     export OPENAI_MODEL
     export LLM_TOOL_CALLING_ENABLED="${LLM_TOOL_CALLING_ENABLED:-true}"
     export LLM_REQUEST_TIMEOUT_MS
@@ -43,7 +95,11 @@ case "$REPLY_MODE" in
     REPLY_DESCRIPTION="OpenAI externa: worker monta ChatPromptTemplate, chama ChatOpenAI na API OpenAI e pode usar tool calling conforme LLM_TOOL_CALLING_ENABLED."
     ;;
   *)
-    echo "REPLY_MODE invalido: $REPLY_MODE. Use lmstudio ou openai." >&2
+    if [[ -z "$REPLY_MODE" ]]; then
+      echo "REPLY_MODE e obrigatorio. Use REPLY_MODE=lmstudio ou REPLY_MODE=openai." >&2
+    else
+      echo "REPLY_MODE invalido: $REPLY_MODE. Use lmstudio ou openai." >&2
+    fi
     exit 1
     ;;
 esac
@@ -138,11 +194,6 @@ if [[ "$USE_DOCKER_INFRA" == "true" ]]; then
   require_cmd docker
 fi
 
-if [[ ! -f .env ]]; then
-  section "Criando .env a partir de .env.example"
-  cp .env.example .env
-fi
-
 section "Garantindo dependencias locais compativeis com o host"
 npm install
 
@@ -208,6 +259,41 @@ try {
 } catch (err) {
   console.error(`Nao consegui acessar LM Studio a partir do host em ${modelsUrl}.`);
   console.error("Confirme se o servidor OpenAI-compatible do LM Studio esta ativo e se o modelo foi carregado.");
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+} finally {
+  clearTimeout(timeout);
+}
+NODE
+fi
+
+if [[ "$REPLY_MODE" == "openai" ]]; then
+  section "Validando credenciais OpenAI"
+  node - "$OPENAI_API_KEY" "$OPENAI_MODEL" <<'NODE'
+const apiKey = process.argv[2];
+const model = process.argv[3];
+const url = `https://api.openai.com/v1/models/${encodeURIComponent(model)}`;
+
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), 15_000);
+
+try {
+  const response = await fetch(url, {
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+    },
+    signal: controller.signal,
+  });
+  const body = await response.text();
+  if (!response.ok) {
+    console.error(`OpenAI respondeu HTTP ${response.status} ao validar o modelo ${model}.`);
+    console.error(body.slice(0, 500));
+    process.exit(1);
+  }
+  console.log(`OpenAI acessivel; modelo validado: ${model}`);
+} catch (err) {
+  console.error(`Nao consegui validar a OpenAI em ${url}.`);
+  console.error("Confirme OPENAI_API_KEY, OPENAI_MODEL e conectividade de rede.");
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
 } finally {
