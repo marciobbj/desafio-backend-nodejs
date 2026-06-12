@@ -204,6 +204,36 @@ Ela retorna dados deterministicas em memoria para demonstrar o fluxo de tool cal
 - Logs incluem `tenantId`, `conversationId`, `waMessageId`, `queueName`, modelo usado e status relevantes.
 - O mock da Meta permite consultar envios em `GET /sent`.
 
+## Cobertura de testes
+
+A suite automatizada atual usa Vitest e cobre 20 cenarios em 9 arquivos de teste.
+
+O foco da cobertura e proteger as regras de negocio e as fronteiras criticas do fluxo:
+
+- assinatura HMAC do webhook da Meta;
+- parsing de payload inbound da Meta;
+- handshake `GET /webhook`;
+- reentrega completa do mesmo webhook sem novo enqueue;
+- resolucao de tenant por `tenant_channels.phone_number_id`;
+- isolamento das rotas REST pelo `tenantId` autenticado;
+- regras de idempotencia async e `jobId` compativel com BullMQ;
+- worker reaproveitando outbound pendente em retry;
+- worker ignorando outbound ja enviado para nao duplicar resposta;
+- falha no envio para a Meta propagando erro para permitir retry do BullMQ;
+- carregamento da `knowledge-base/` como contexto da LLM;
+- validacao do template LangChain por tenant.
+
+Alguns testes de fluxo usam mocks nas bordas de banco, fila, LLM e Meta. Essa escolha mantem o `npm test` rapido, deterministico e sem depender de Postgres, Redis, LM Studio ou chave da OpenAI.
+
+O smoke script complementa essa cobertura exercitando o caminho de ponta a ponta com infraestrutura real local: webhook, Postgres, Redis/BullMQ, worker, LLM via LM Studio/OpenAI e mock da Meta.
+
+Limites atuais da cobertura:
+
+- nao ha teste automatizado de integracao subindo Postgres e Redis dentro da suite;
+- nao ha simulacao de multiplas replicas de worker;
+- nao ha assercao automatizada de qualidade semantica da resposta da LLM;
+- o caminho OpenAI/LM Studio real fica validado pelo smoke script, nao pela suite unit/integration rapida.
+
 ## Limites conscientes
 
 - Login real e gestao de usuarios ficaram fora do escopo.
