@@ -243,16 +243,27 @@ App no Docker:
 OPENAI_BASE_URL=http://host.docker.internal:1234
 ```
 
+Importante: `127.0.0.1` dentro do container e o proprio container, nao o host. Para backend/worker em Docker, o LM Studio precisa estar acessivel em `host.docker.internal:1234`. Se der timeout, habilite no LM Studio a opcao de aceitar conexoes da rede/local network, ou rode backend e worker no host usando `OPENAI_BASE_URL=http://127.0.0.1:1234`.
+
 Para modelos locais, mantenha:
 
 ```env
 LLM_TOOL_CALLING_ENABLED=false
+LLM_REQUEST_TIMEOUT_MS=600000
 ```
 
 Smoke test:
 
 ```bash
 REPLY_MODE=lmstudio ./scripts/test-flows.sh
+```
+
+O script valida primeiro `GET /v1/models` a partir do container backend. Se essa checagem falhar, o problema e conectividade entre Docker e host, nao a cadeia LangChain.
+
+Modelos locais podem demorar no primeiro carregamento. Para aumentar a espera do smoke test:
+
+```bash
+REPLY_MODE=lmstudio SMOKE_RESPONSE_TIMEOUT_SECONDS=420 LLM_REQUEST_TIMEOUT_MS=900000 ./scripts/test-flows.sh
 ```
 
 Se quiser usar outro modelo local:

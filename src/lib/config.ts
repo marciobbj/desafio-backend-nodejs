@@ -22,6 +22,7 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-4o-mini"),
   OPENAI_BASE_URL: optionalUrl,
+  LLM_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(600_000),
   LLM_TOOL_CALLING_ENABLED: z
     .enum(["true", "false"])
     .default("true")

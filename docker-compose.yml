@@ -60,6 +60,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-proj-troque-pela-sua-chave}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_REQUEST_TIMEOUT_MS: ${LLM_REQUEST_TIMEOUT_MS:-600000}
       LLM_TOOL_CALLING_ENABLED: ${LLM_TOOL_CALLING_ENABLED:-true}
       META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-meu-verify-token-secreto}
       META_APP_SECRET: ${META_APP_SECRET:-super-secret-app-secret-trocar}
@@ -91,6 +92,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-proj-troque-pela-sua-chave}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      LLM_REQUEST_TIMEOUT_MS: ${LLM_REQUEST_TIMEOUT_MS:-600000}
       LLM_TOOL_CALLING_ENABLED: ${LLM_TOOL_CALLING_ENABLED:-true}
       META_TOKEN: ${META_TOKEN:-mock-token}
       META_API_BASE_URL: http://mock-meta:8001

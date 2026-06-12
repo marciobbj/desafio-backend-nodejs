@@ -133,7 +133,9 @@ Para LM Studio no host:
 
 - Rodando backend/worker no host: use `OPENAI_BASE_URL=http://127.0.0.1:1234`.
 - Rodando backend/worker no Docker: use `OPENAI_BASE_URL=http://host.docker.internal:1234`.
+- Em Docker, o LM Studio tambem precisa aceitar conexoes fora de `127.0.0.1`; caso contrario, o container nao chega ao servidor mesmo usando `host.docker.internal`.
 - Para modelos locais que nao suportam tool calling de forma compativel, use `LLM_TOOL_CALLING_ENABLED=false`.
+- Modelos locais podem exigir timeouts maiores; o projeto expoe `LLM_REQUEST_TIMEOUT_MS` para configurar a chamada ao endpoint OpenAI-compatible.
 
 Esta opcao foi adicionada por necessidade pratica durante a implementacao: testar o fluxo real de LLM sem depender de uma chave externa da OpenAI. A decisao foi manter a integracao passando pelo mesmo `ChatOpenAI` do LangChain, alterando apenas `OPENAI_BASE_URL`, em vez de criar um provider paralelo para modelo local.
 

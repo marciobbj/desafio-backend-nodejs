@@ -113,6 +113,7 @@ export async function generateReply(input: GenerateReplyInput) {
     apiKey: isPlaceholderApiKey(config.OPENAI_API_KEY) ? "lm-studio" : config.OPENAI_API_KEY,
     model: aiSettings.model ?? config.OPENAI_MODEL,
     temperature: aiSettings.temperature ?? 0.1,
+    timeout: config.LLM_REQUEST_TIMEOUT_MS,
     maxRetries: 2,
     configuration: config.OPENAI_BASE_URL
       ? {
@@ -127,6 +128,7 @@ export async function generateReply(input: GenerateReplyInput) {
       conversationId: input.conversationId,
       model: aiSettings.model ?? config.OPENAI_MODEL,
       baseURL: config.OPENAI_BASE_URL,
+      timeoutMs: config.LLM_REQUEST_TIMEOUT_MS,
       toolCallingEnabled: aiSettings.toolCallingEnabled ?? config.LLM_TOOL_CALLING_ENABLED,
     },
     "Generating reply with LangChain chat model",

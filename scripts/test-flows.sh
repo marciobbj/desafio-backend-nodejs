@@ -12,12 +12,14 @@ MESSAGE_ID="${SMOKE_MESSAGE_ID:-wamid.smoke.$(date +%s)}"
 REPLY_MODE="${REPLY_MODE:-deterministic}"
 LMSTUDIO_MODEL="${LMSTUDIO_MODEL:-google/gemma-3n-e4b}"
 OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
+LLM_REQUEST_TIMEOUT_MS="${LLM_REQUEST_TIMEOUT_MS:-600000}"
 
 case "$REPLY_MODE" in
   deterministic)
     export OPENAI_API_KEY="sk-proj-troque-pela-sua-chave"
     export OPENAI_BASE_URL=""
     export LLM_TOOL_CALLING_ENABLED="false"
+    RESPONSE_TIMEOUT_SECONDS="${SMOKE_RESPONSE_TIMEOUT_SECONDS:-60}"
     REPLY_PATH="deterministico"
     REPLY_DESCRIPTION="Sem LLM configurada: worker usa retrieveKnowledge() e generateLocalReply() para responder a partir da knowledge-base."
     ;;
@@ -29,6 +31,8 @@ case "$REPLY_MODE" in
       export OPENAI_BASE_URL="http://host.docker.internal:1234"
     fi
     export LLM_TOOL_CALLING_ENABLED="${LLM_TOOL_CALLING_ENABLED:-false}"
+    export LLM_REQUEST_TIMEOUT_MS
+    RESPONSE_TIMEOUT_SECONDS="${SMOKE_RESPONSE_TIMEOUT_SECONDS:-240}"
     REPLY_PATH="lmstudio"
     REPLY_DESCRIPTION="LLM local OpenAI-compatible: worker monta ChatPromptTemplate, chama ChatOpenAI apontando para LM Studio e usa modelo $OPENAI_MODEL."
     ;;
@@ -40,6 +44,8 @@ case "$REPLY_MODE" in
     export OPENAI_BASE_URL="${OPENAI_BASE_URL:-}"
     export OPENAI_MODEL
     export LLM_TOOL_CALLING_ENABLED="${LLM_TOOL_CALLING_ENABLED:-true}"
+    export LLM_REQUEST_TIMEOUT_MS
+    RESPONSE_TIMEOUT_SECONDS="${SMOKE_RESPONSE_TIMEOUT_SECONDS:-180}"
     REPLY_PATH="openai"
     REPLY_DESCRIPTION="OpenAI externa: worker monta ChatPromptTemplate, chama ChatOpenAI na API OpenAI e pode usar tool calling conforme LLM_TOOL_CALLING_ENABLED."
     ;;
@@ -54,6 +60,8 @@ echo "[resposta] caminho: $REPLY_DESCRIPTION"
 echo "[resposta] OPENAI_MODEL=${OPENAI_MODEL:-nao-aplicavel}"
 echo "[resposta] OPENAI_BASE_URL=${OPENAI_BASE_URL:-openai-default-ou-vazio}"
 echo "[resposta] LLM_TOOL_CALLING_ENABLED=${LLM_TOOL_CALLING_ENABLED:-nao-definido}"
+echo "[resposta] LLM_REQUEST_TIMEOUT_MS=${LLM_REQUEST_TIMEOUT_MS:-nao-definido}"
+echo "[resposta] timeout aguardando outbound=${RESPONSE_TIMEOUT_SECONDS}s"
 
 section() {
   printf "\n==> %s\n" "$1"
@@ -138,6 +146,38 @@ wait_http "$MOCK_URL/health" "mock-meta"
 print_json "Health backend" "$BACKEND_URL/health"
 print_json "Health mock-meta" "$MOCK_URL/health"
 
+if [[ "$REPLY_MODE" == "lmstudio" ]]; then
+  section "Validando acesso do container ao LM Studio"
+  $COMPOSE exec -T backend node - "$OPENAI_BASE_URL" <<'NODE'
+const rawBaseUrl = process.argv[2];
+const baseUrl = rawBaseUrl.replace(/\/$/, "");
+const modelsUrl = `${baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`}/models`;
+
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), 10_000);
+
+try {
+  const response = await fetch(modelsUrl, { signal: controller.signal });
+  const body = await response.text();
+  if (!response.ok) {
+    console.error(`LM Studio respondeu HTTP ${response.status} em ${modelsUrl}`);
+    console.error(body.slice(0, 500));
+    process.exit(1);
+  }
+  console.log(`LM Studio acessivel a partir do container: ${modelsUrl}`);
+  console.log(body.slice(0, 500));
+} catch (err) {
+  console.error(`Nao consegui acessar LM Studio a partir do container em ${modelsUrl}.`);
+  console.error("Se o backend/worker rodam no Docker, 127.0.0.1 aponta para o container.");
+  console.error("Use OPENAI_BASE_URL=http://host.docker.internal:1234 e configure o LM Studio para aceitar conexoes fora de localhost, ou rode backend/worker no host.");
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+} finally {
+  clearTimeout(timeout);
+}
+NODE
+fi
+
 section "Caminho de geracao da resposta"
 echo "Modo selecionado: $REPLY_PATH"
 echo "$REPLY_DESCRIPTION"
@@ -203,7 +243,7 @@ fi
 
 section "Aguardando worker enviar resposta outbound"
 AFTER_COUNT="$BEFORE_COUNT"
-for _ in $(seq 1 60); do
+for _ in $(seq 1 "$RESPONSE_TIMEOUT_SECONDS"); do
   AFTER_COUNT="$(sent_count)"
   if (( AFTER_COUNT > BEFORE_COUNT )); then
     break
@@ -212,7 +252,10 @@ for _ in $(seq 1 60); do
 done
 
 if (( AFTER_COUNT <= BEFORE_COUNT )); then
-  echo "Worker nao enviou resposta outbound dentro do timeout" >&2
+  echo "Worker nao enviou resposta outbound dentro de ${RESPONSE_TIMEOUT_SECONDS}s" >&2
+  if [[ "$REPLY_MODE" == "lmstudio" ]]; then
+    echo "Para modelos locais, confirme se o modelo ja terminou de carregar no LM Studio ou aumente SMOKE_RESPONSE_TIMEOUT_SECONDS/LLM_REQUEST_TIMEOUT_MS." >&2
+  fi
   section "Logs backend"
   $COMPOSE logs --tail=80 backend
   section "Logs worker"
