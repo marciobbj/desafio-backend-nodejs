@@ -324,9 +324,11 @@ section "Gerando JWT de desenvolvimento"
 TOKEN="$(npm run token:dev | tail -n 1 | tr -d '\r')"
 echo "TOKEN=$TOKEN"
 
-section "Consultando configuracao de IA do tenant"
-curl -fsS "$BACKEND_URL/tenant/ai-settings" \
-  -H "Authorization: Bearer $TOKEN"
+section "Resetando limite de orçamento do tenant para o teste de flows"
+curl -fsS -X PATCH "$BACKEND_URL/tenant/ai-settings" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"monthlyBudgetUsd": null, "currentMonthSpendUsd": 0.00}'
 printf "\n"
 
 section "Validando erro de template invalido"
